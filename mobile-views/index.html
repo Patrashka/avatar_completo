@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedicalApp - Vista Móvil</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0b1220;
+            height: 100vh;
+            overflow: hidden;
+            color: #e6f0ff;
+        }
+        
+        .phone-container {
+            width: 390px;
+            height: 844px;
+            margin: 20px auto;
+            background: #000;
+            border-radius: 35px;
+            padding: 6px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.4);
+        }
+        
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: #0b1220;
+            border-radius: 30px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .status-bar {
+            height: 44px;
+            background: linear-gradient(135deg, #52e5ff 0%, #8a7dff 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            color: #04121f;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .screen {
+            height: calc(100% - 44px);
+            display: none;
+            flex-direction: column;
+            background: radial-gradient(1000px 600px at 20% -20%, #15305e40 0%, transparent 60%),
+                        linear-gradient(180deg, #0b1220, #0a1730);
+        }
+        
+        .screen.active {
+            display: flex;
+        }
+        
+        /* Login Screen */
+        .login-screen {
+            padding: 60px 30px 30px;
+            text-align: center;
+            background: linear-gradient(135deg, #52e5ff 0%, #8a7dff 100%);
+            color: #04121f;
+        }
+        
+        .logo {
+            width: 100px;
+            height: 100px;
+            background: rgba(4,18,31,0.2);
+            border-radius: 50%;
+            margin: 0 auto 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .login-title {
+            font-size: 28px;
+            margin-bottom: 50px;
+            font-weight: 700;
+        }
+        
+        .input-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: rgba(4,18,31,0.9);
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 16px 20px;
+            border: 2px solid rgba(4,18,31,0.3);
+            border-radius: 12px;
+            font-size: 16px;
+            background: rgba(4,18,31,0.1);
+            color: #04121f;
+            backdrop-filter: blur(10px);
+        }
+        
+        .input-group input::placeholder {
+            color: rgba(4,18,31,0.7);
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: rgba(4,18,31,0.6);
+            background: rgba(4,18,31,0.2);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 18px;
+            background: rgba(4,18,31,0.2);
+            color: #04121f;
+            border: 2px solid rgba(4,18,31,0.3);
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 30px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: rgba(4,18,31,0.3);
+            transform: translateY(-2px);
+        }
+        
+        /* Dashboard Screen */
+        .dashboard-screen {
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #52e5ff 0%, #8a7dff 100%);
+            color: #04121f;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .logout-btn {
+            background: rgba(4,18,31,0.2);
+            color: #04121f;
+            border: 1px solid rgba(4,18,31,0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* Navigation Tabs */
+        .nav-tabs {
+            display: flex;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 4px;
+            margin: 10px;
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+        
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+        
+        .nav-tab {
+            border: 0;
+            background: transparent;
+            color: #9bb3d1;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+            font-size: 12px;
+        }
+        
+        .nav-tab:hover {
+            color: #e6f0ff;
+        }
+        
+        .nav-tab.active {
+            color: #04121f;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.1) inset;
+        }
+        
+        /* Profile Section */
+        .profile-section {
+            padding: 20px;
+            background: rgba(255,255,255,0.06);
+            margin: 10px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px);
+        }
+        
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .profile-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #04121f;
+        }
+        
+        .profile-info h3 {
+            margin: 0;
+            font-size: 18px;
+            color: #e6f0ff;
+        }
+        
+        .profile-info p {
+            margin: 0;
+            font-size: 14px;
+            color: #9bb3d1;
+        }
+        
+        /* Doctor Card */
+        .doctor-card {
+            padding: 15px;
+            background: rgba(255,255,255,0.06);
+            margin: 10px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px);
+        }
+        
+        .doctor-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .doctor-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #04121f;
+        }
+        
+        .doctor-info h4 {
+            margin: 0;
+            font-size: 16px;
+            color: #e6f0ff;
+        }
+        
+        .doctor-info p {
+            margin: 0;
+            font-size: 12px;
+            color: #9bb3d1;
+        }
+        
+        .doctor-details {
+            font-size: 12px;
+            color: #9bb3d1;
+            margin-top: 8px;
+        }
+        
+        .doctor-details span {
+            opacity: 0.8;
+            margin-right: 6px;
+        }
+        
+        /* Appointments */
+        .appointments-section {
+            padding: 20px;
+            background: rgba(255,255,255,0.06);
+            margin: 10px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px);
+        }
+        
+        .appointments-title {
+            font-size: 16px;
+            color: #e6f0ff;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .appointment-item {
+            padding: 10px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #9bb3d1;
+        }
+        
+        /* AI Section */
+        .ai-section {
+            padding: 20px;
+            background: rgba(255,255,255,0.06);
+            margin: 10px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px);
+        }
+        
+        .ai-title {
+            font-size: 16px;
+            color: #e6f0ff;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .ai-mode-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .ai-mode-btn {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: #9bb3d1;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 12px;
+        }
+        
+        .ai-mode-btn.active {
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            color: #04121f;
+            border-color: transparent;
+        }
+        
+        /* Avatar iframe */
+        .avatar-container {
+            height: 200px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: #081224;
+            margin-bottom: 10px;
+        }
+        
+        .avatar-iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+        
+        /* Chat Container */
+        .chat-container {
+            height: 300px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .chat-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: rgba(255,255,255,0.04);
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+        }
+        
+        .chat-header__avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #04121f;
+        }
+        
+        .chat-header__info h4 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #e6f0ff;
+        }
+        
+        .chat-header__status {
+            font-size: 12px;
+            color: #3cf0a5;
+        }
+        
+        .chat-header__clear {
+            margin-left: auto;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.06);
+            color: #9bb3d1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        
+        .chat-header__clear:hover {
+            background: rgba(255,92,124,0.2);
+            color: #ff5c7c;
+            transform: scale(1.1);
+        }
+        
+        .chat-window {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 16px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+        
+        .chat-welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px 20px;
+            color: #9bb3d1;
+        }
+        
+        .chat-welcome__icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .chat-welcome h3 {
+            margin: 0 0 8px 0;
+            color: #e6f0ff;
+        }
+        
+        .chat-welcome p {
+            margin: 0;
+            line-height: 1.5;
+            max-width: 300px;
+        }
+        
+        .message {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            position: relative;
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            color: #04121f;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.ai {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #e6f0ff;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .message__content {
+            margin-bottom: 4px;
+        }
+        
+        .message__time {
+            font-size: 11px;
+            opacity: 0.7;
+            text-align: right;
+        }
+        
+        .message.ai .message__time {
+            text-align: left;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        
+        .typing-indicator span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #9bb3d1;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+        
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+        
+        .chat-input {
+            padding: 16px;
+            background: rgba(255,255,255,0.04);
+            border-top: 1px solid rgba(255,255,255,0.12);
+        }
+        
+        .chat-input__container {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        
+        .chat-input__field {
+            flex: 1;
+            min-height: 40px;
+            max-height: 120px;
+            padding: 10px 14px;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            background: rgba(255,255,255,0.06);
+            color: #e6f0ff;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .chat-input__field:focus {
+            border-color: #52e5ff;
+        }
+        
+        .chat-input__send {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            color: #04121f;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        
+        .chat-input__send:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+        
+        .chat-input__send:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .chat-input__options {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            align-items: center;
+        }
+        
+        .chat-input__file {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .chat-input__file:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .chat-input__file input {
+            display: none;
+        }
+        
+        .chat-input__studies {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.04);
+            color: #e6f0ff;
+            font-size: 12px;
+            outline: none;
+        }
+        
+        .chat-input__studies::placeholder {
+            color: #9bb3d1;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(2,8,20,0.85);
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .modal-content {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            padding: 20px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 30px 90px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e6f0ff;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: #9bb3d1;
+            cursor: pointer;
+            font-size: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #9bb3d1;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            color: #e6f0ff;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .form-group input:focus {
+            border-color: #52e5ff;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            color: #04121f;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            color: #e6f0ff;
+            border: 1px solid rgba(255,255,255,0.12);
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        /* AI Summary */
+        .ai-summary {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 10px;
+        }
+        
+        .ai-summary__date {
+            font-size: 12px;
+            color: #9bb3d1;
+            margin-bottom: 8px;
+        }
+        
+        .ai-summary__content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #e6f0ff;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.5);
+        }
+        
+        /* === Mobile KPI Styles === */
+        .metrics-section {
+            padding: 20px;
+        }
+        
+        .metrics-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e6f0ff;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .mobile-kpi-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .mobile-kpi-card {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 16px;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+        }
+        
+        .mobile-kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(82,229,255,0.15);
+            border-color: rgba(82,229,255,0.3);
+        }
+        
+        .mobile-kpi-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .mobile-kpi-icon {
+            font-size: 18px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            border-radius: 8px;
+            color: #04121f;
+        }
+        
+        .mobile-kpi-title {
+            font-size: 12px;
+            color: #9bb3d1;
+            font-weight: 500;
+        }
+        
+        .mobile-kpi-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #e6f0ff;
+            margin-bottom: 4px;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .mobile-kpi-subtitle {
+            font-size: 10px;
+            color: #9bb3d1;
+        }
+        
+        .mobile-chart-section {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            backdrop-filter: blur(12px);
+        }
+        
+        .mobile-chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e6f0ff;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .mobile-chart-container {
+            width: 100%;
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .quick-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .quick-stat {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+        }
+        
+        .quick-stat-icon {
+            font-size: 20px;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #52e5ff, #8a7dff);
+            border-radius: 8px;
+            color: #04121f;
+        }
+        
+        .quick-stat-info {
+            flex: 1;
+        }
+        
+        .quick-stat-label {
+            font-size: 12px;
+            color: #9bb3d1;
+            margin-bottom: 2px;
+        }
+        
+        .quick-stat-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e6f0ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-container">
+        <div class="phone-screen">
+            <div class="status-bar">
+                <span>9:41</span>
+                <span>📶 🔋 100%</span>
+            </div>
+            
+            <!-- Login Screen -->
+            <div id="loginScreen" class="screen login-screen active">
+                <div class="logo">🏥</div>
+                <h1 class="login-title">Iniciar Sesión</h1>
+                
+                <div class="input-group">
+                    <label>Correo electrónico</label>
+                    <input type="email" id="email" placeholder="tu@email.com">
+                </div>
+                
+                <div class="input-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="password" placeholder="••••••••">
+                </div>
+                
+                <button class="btn" onclick="login()">Iniciar Sesión</button>
+            </div>
+            
+            <!-- Dashboard Screen -->
+            <div id="dashboardScreen" class="screen dashboard-screen">
+                <div class="header">
+                    <h1>Panel del Paciente</h1>
+                    <button class="logout-btn" onclick="logout()">logout</button>
+                </div>
+                
+                <!-- Navigation Tabs -->
+                <div class="nav-tabs">
+                    <button class="nav-tab active" onclick="showView('home')">🏠 Inicio</button>
+                    <button class="nav-tab" onclick="showView('profile')">👤 Perfil</button>
+                    <button class="nav-tab" onclick="showView('metrics')">📊 Métricas</button>
+                    <button class="nav-tab" onclick="showView('doctor')">👨‍⚕️ Doctor</button>
+                    <button class="nav-tab" onclick="showView('appointments')">📅 Citas</button>
+                    <button class="nav-tab" onclick="showView('ai-history')">📑 IA</button>
+                </div>
+                
+                <!-- Main Content Area -->
+                <div class="main-content">
+                    <!-- Home View -->
+                    <div id="homeView" class="view-content">
+                    <!-- Profile Section -->
+                    <div class="profile-section">
+                        <div class="profile-header">
+                            <div class="profile-avatar">👤</div>
+                            <div class="profile-info">
+                                <h3 id="userName">Usuario Demo</h3>
+                                <p>Tu asistente médico virtual está listo</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Mode Selector -->
+                    <div class="ai-section">
+                        <div class="ai-title">💬 Asistente Médico</div>
+                        <div class="ai-mode-selector">
+                            <button class="ai-mode-btn active" onclick="setAIMode('avatar')">🧑‍⚕️ AI Avatar</button>
+                            <button class="ai-mode-btn" onclick="setAIMode('chat')">💬 Chatbot</button>
+                        </div>
+                        
+                        <!-- Avatar Mode -->
+                        <div id="avatarMode" class="ai-mode-content">
+                            <div class="avatar-container">
+                                <iframe 
+                                    class="avatar-iframe"
+                                    src="https://nimble-cuchufli-a3ebce.netlify.app/"
+                                    title="Avatar Externo"
+                                    allow="camera; microphone; clipboard-read; clipboard-write; autoplay; encrypted-media"
+                                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-downloads">
+                                </iframe>
+                            </div>
+                            <button class="btn-secondary" onclick="window.open('https://nimble-cuchufli-a3ebce.netlify.app/', '_blank')">
+                                🌐 Abrir en nueva pestaña
+                            </button>
+                        </div>
+                        
+                        <!-- Chat Mode -->
+                        <div id="chatMode" class="ai-mode-content" style="display: none;">
+                            <div class="chat-container">
+                                <div class="chat-header">
+                                    <div class="chat-header__avatar">🤖</div>
+                                    <div class="chat-header__info">
+                                        <h4>AI Medical Assistant</h4>
+                                        <span class="chat-header__status">En línea</span>
+                                    </div>
+                                    <button class="chat-header__clear" onclick="clearChatHistory()" title="Limpiar historial">🗑️</button>
+                                </div>
+                                
+                                <div class="chat-window" id="chatWindow">
+                                    <div class="chat-welcome">
+                                        <div class="chat-welcome__icon">👋</div>
+                                        <h3>¡Hola! Soy tu asistente médico AI</h3>
+                                        <p>Puedes preguntarme sobre síntomas, medicamentos, o cualquier duda médica. Recuerda que esto no sustituye la consulta con tu médico.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="chat-input">
+                                    <div class="chat-input__container">
+                                        <textarea 
+                                            class="chat-input__field" 
+                                            id="messageInput"
+                                            placeholder="Escribe tu mensaje..."
+                                            onkeypress="handleKeyPress(event)"
+                                            rows="1">
+                                        </textarea>
+                                        <button class="chat-input__send" onclick="sendMessage()">📤</button>
+                                    </div>
+                                    <div class="chat-input__options">
+                                        <label class="chat-input__file">
+                                            <input type="file" multiple onchange="handleFileSelect(event)" />
+                                            <span>📎</span>
+                                        </label>
+                                        <input 
+                                            class="chat-input__studies" 
+                                            id="studiesInput"
+                                            placeholder="URLs de estudios (opcional)" 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Profile View -->
+                <div id="profileView" class="view-content" style="display: none;">
+                    <div class="profile-section">
+                        <div class="form-group">
+                            <label>Nombre</label>
+                            <input type="text" id="profileName" value="Usuario Demo">
+                        </div>
+                        <div class="form-group">
+                            <label>Sexo</label>
+                            <input type="text" id="profileSex" placeholder="M/F">
+                        </div>
+                        <div class="form-group">
+                            <label>Edad</label>
+                            <input type="number" id="profileAge" placeholder="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Altura (cm)</label>
+                            <input type="number" id="profileHeight" placeholder="170">
+                        </div>
+                        <div class="form-group">
+                            <label>Peso (kg)</label>
+                            <input type="number" id="profileWeight" placeholder="70">
+                        </div>
+                        <div class="form-group">
+                            <label>Tipo de sangre</label>
+                            <input type="text" id="profileBloodType" placeholder="O+">
+                        </div>
+                        <div class="form-group">
+                            <label>Alergias</label>
+                            <input type="text" id="profileAllergies" placeholder="Ninguna conocida">
+                        </div>
+                        <div class="form-group">
+                            <label>Teléfono</label>
+                            <input type="tel" id="profilePhone" placeholder="+52 81 1234 5678">
+                        </div>
+                        <div class="form-group">
+                            <label>Correo</label>
+                            <input type="email" id="profileEmail" placeholder="usuario@email.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Dirección</label>
+                            <input type="text" id="profileAddress" placeholder="Calle 123, Colonia">
+                        </div>
+                        <div class="form-group">
+                            <label>Estado civil</label>
+                            <input type="text" id="profileMaritalStatus" placeholder="Soltero">
+                        </div>
+                        <div class="form-group">
+                            <label>Ocupación</label>
+                            <input type="text" id="profileOccupation" placeholder="Ingeniero">
+                        </div>
+                        <div class="form-group">
+                            <label>Estilo de vida</label>
+                            <input type="text" id="profileLifestyle" placeholder="Activo">
+                        </div>
+                        <div class="form-group">
+                            <label>Aseguradora</label>
+                            <input type="text" id="profileInsurance" placeholder="Seguro Popular">
+                        </div>
+                        <div class="form-group">
+                            <label>Póliza</label>
+                            <input type="text" id="profilePolicyNumber" placeholder="POL123456">
+                        </div>
+                        <div class="form-group">
+                            <label>NSS (IMSS)</label>
+                            <input type="text" id="profileNSS" placeholder="12345678901">
+                        </div>
+                        <button class="btn-primary" onclick="saveProfile()">💾 Guardar Perfil</button>
+                    </div>
+                </div>
+                
+                <!-- Metrics View -->
+                <div id="metricsView" class="view-content" style="display: none;">
+                    <div class="metrics-section">
+                        <h3 class="metrics-title">📊 Métricas de Salud</h3>
+                        
+                        <!-- KPI Cards -->
+                        <div class="mobile-kpi-grid">
+                            <div class="mobile-kpi-card">
+                                <div class="mobile-kpi-header">
+                                    <div class="mobile-kpi-icon">📅</div>
+                                    <div class="mobile-kpi-title">Próximas Citas</div>
+                                </div>
+                                <div class="mobile-kpi-value" id="mobileUpcomingAppointments">3</div>
+                                <div class="mobile-kpi-subtitle">Este mes</div>
+                            </div>
+                            
+                            <div class="mobile-kpi-card">
+                                <div class="mobile-kpi-header">
+                                    <div class="mobile-kpi-icon">😊</div>
+                                    <div class="mobile-kpi-title">Días Sin Síntomas</div>
+                                </div>
+                                <div class="mobile-kpi-value" id="mobileDaysWithoutSymptoms">7</div>
+                                <div class="mobile-kpi-subtitle">Desde última consulta</div>
+                            </div>
+                            
+                            <div class="mobile-kpi-card">
+                                <div class="mobile-kpi-header">
+                                    <div class="mobile-kpi-icon">✅</div>
+                                    <div class="mobile-kpi-title">Cumplimiento</div>
+                                </div>
+                                <div class="mobile-kpi-value" id="mobileComplianceRate">85%</div>
+                                <div class="mobile-kpi-subtitle">Recomendaciones</div>
+                            </div>
+                            
+                            <div class="mobile-kpi-card">
+                                <div class="mobile-kpi-header">
+                                    <div class="mobile-kpi-icon">💊</div>
+                                    <div class="mobile-kpi-title">Medicamentos</div>
+                                </div>
+                                <div class="mobile-kpi-value" id="mobileMedications">2</div>
+                                <div class="mobile-kpi-subtitle">Activos</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Mini Chart Container -->
+                        <div class="mobile-chart-section">
+                            <h4 class="mobile-chart-title">📈 Evolución de Consultas</h4>
+                            <div class="mobile-chart-container">
+                                <canvas id="mobileSymptomsChart" width="300" height="150"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Stats -->
+                        <div class="quick-stats">
+                            <div class="quick-stat">
+                                <div class="quick-stat-icon">🏃‍♂️</div>
+                                <div class="quick-stat-info">
+                                    <div class="quick-stat-label">Ejercicio</div>
+                                    <div class="quick-stat-value">5 días/semana</div>
+                                </div>
+                            </div>
+                            <div class="quick-stat">
+                                <div class="quick-stat-icon">😴</div>
+                                <div class="quick-stat-info">
+                                    <div class="quick-stat-label">Sueño</div>
+                                    <div class="quick-stat-value">7.5 horas/día</div>
+                                </div>
+                            </div>
+                            <div class="quick-stat">
+                                <div class="quick-stat-icon">💧</div>
+                                <div class="quick-stat-info">
+                                    <div class="quick-stat-label">Hidratación</div>
+                                    <div class="quick-stat-value">2.5L/día</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Doctor View -->
+                <div id="doctorView" class="view-content" style="display: none;">
+                    <div class="doctor-card">
+                        <div class="doctor-header">
+                            <div class="doctor-avatar">🩺</div>
+                            <div class="doctor-info">
+                                <h4>Dr. José</h4>
+                                <p>Medicina Interna • Céd. Prof. 12345678</p>
+                            </div>
+                        </div>
+                        <div class="doctor-details">
+                            <div><span>Tel:</span> +52 81 1234 5678</div>
+                            <div><span>Correo:</span> jose.med@hospital.mx</div>
+                            <div><span>Ubicación:</span> Consultorio 402, Torre Médica San Pedro</div>
+                        </div>
+                        <p style="margin-top: 10px; font-size: 12px; color: #9bb3d1;">
+                            15+ años de experiencia en medicina interna, enfoque en prevención, control metabólico y salud integral.
+                        </p>
+                    </div>
+                    
+                    <div class="appointments-section">
+                        <div class="appointments-title">📅 Agendar Nueva Cita</div>
+                        <div class="form-group">
+                            <label>Fecha</label>
+                            <input type="date" id="appointmentDate">
+                        </div>
+                        <div class="form-group">
+                            <label>Hora</label>
+                            <input type="time" id="appointmentTime">
+                        </div>
+                        <button class="btn-primary" onclick="scheduleAppointment()">📅 Programar Cita</button>
+                    </div>
+                </div>
+                
+                <!-- Appointments View -->
+                <div id="appointmentsView" class="view-content" style="display: none;">
+                    <div class="appointments-section">
+                        <div class="appointments-title">📅 Próximas Citas</div>
+                        <div id="appointmentsList">
+                            <div class="appointment-item">
+                                <strong>5 Sep 2025 • 10:30</strong> — Dr. José<br>
+                                <small>Cefalea tensional relacionada con estrés</small>
+                            </div>
+                            <div class="appointment-item">
+                                <strong>10 Sep 2025 • 16:00</strong> — Dr. José<br>
+                                <small>Rinitis alérgica estacional</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="appointments-section">
+                        <div class="appointments-title">📋 Última Consulta</div>
+                        <div class="appointment-item">
+                            <strong>Resumen clínico:</strong> Cefalea tensional relacionada con estrés; signos vitales dentro de parámetros.<br>
+                            <strong>Receta médica:</strong> Paracetamol 500mg c/8h por 2 días; hidratación; descanso visual 20-20-20.<br>
+                            <strong>Recomendaciones:</strong> Dormir 7–8h, pausas activas cada 60 min, limitar cafeína a 1–2 tazas/día.
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI History View -->
+                <div id="aiHistoryView" class="view-content" style="display: none;">
+                    <div class="ai-section">
+                        <div class="ai-title">📑 Historial de Conversaciones AI</div>
+                        <div class="ai-summary">
+                            <div class="ai-summary__date">5 Sep 2025 — IA</div>
+                            <div class="ai-summary__content">
+                                La IA sugiere manejo de dolor leve con analgésicos OTC, hidratación y pausas activas; sin banderas rojas detectadas por los síntomas descritos ese día.
+                            </div>
+                        </div>
+                        <div class="ai-summary">
+                            <div class="ai-summary__date">10 Sep 2025 — IA</div>
+                            <div class="ai-summary__content">
+                                Recomendaciones para rinitis: antihistamínico diario, higiene ambiental, y monitoreo de síntomas en 72 horas. Sugiere control de calidad del aire interior.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div> <!-- End main-content -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentView = 'home';
+        let currentAIMode = 'avatar';
+        let chatMessages = [];
+        let isLoading = false;
+        
+        function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                alert('Por favor completa todos los campos');
+                return;
+            }
+            
+            // Simular login exitoso
+            document.getElementById('loginScreen').classList.remove('active');
+            document.getElementById('dashboardScreen').classList.add('active');
+            
+            // Actualizar mensaje de bienvenida
+            const name = email.split('@')[0];
+            document.getElementById('userName').textContent = name;
+        }
+        
+        function logout() {
+            document.getElementById('dashboardScreen').classList.remove('active');
+            document.getElementById('loginScreen').classList.add('active');
+            
+            // Limpiar campos
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+            
+            // Reset view
+            showView('home');
+        }
+        
+        function showView(view) {
+            // Hide all views
+            document.querySelectorAll('.view-content').forEach(v => v.style.display = 'none');
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            
+            // Show selected view
+            document.getElementById(view + 'View').style.display = 'block';
+            document.querySelector(`[onclick="showView('${view}')"]`).classList.add('active');
+            
+            currentView = view;
+        }
+        
+        function setAIMode(mode) {
+            document.querySelectorAll('.ai-mode-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.ai-mode-content').forEach(c => c.style.display = 'none');
+            
+            document.querySelector(`[onclick="setAIMode('${mode}')"]`).classList.add('active');
+            document.getElementById(mode + 'Mode').style.display = 'block';
+            
+            currentAIMode = mode;
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || isLoading) return;
+            
+            // Add user message
+            addMessage(message, true);
+            input.value = '';
+            
+            // Show typing indicator
+            showTypingIndicator();
+            isLoading = true;
+            
+            // Simulate AI response
+            setTimeout(() => {
+                hideTypingIndicator();
+                const responses = [
+                    "Entiendo tus síntomas. Te recomiendo descansar y beber mucha agua. Si persisten, consulta con un médico.",
+                    "Basándome en lo que describes, podría ser útil que mantengas un registro de cuándo ocurren estos síntomas.",
+                    "Es importante que no ignores estos síntomas. Te sugiero agendar una cita médica para una evaluación completa.",
+                    "Mientras tanto, puedes aplicar algunas medidas de cuidado personal. ¿Te gustaría que te explique más sobre esto?",
+                    "Recuerda que esta es solo una guía general. Siempre consulta con un profesional médico para un diagnóstico preciso.",
+                    "¿Podrías contarme más detalles sobre la intensidad del dolor? ¿Es constante o viene y va?",
+                    "Gracias por compartir esa información. Es importante que monitorees estos síntomas y consultes con un médico si empeoran."
+                ];
+                
+                const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+                addMessage(randomResponse, false);
+                isLoading = false;
+            }, 2000);
+        }
+        
+        function addMessage(text, isUser) {
+            const chatWindow = document.getElementById('chatWindow');
+            
+            // Remove welcome message if it exists
+            const welcome = chatWindow.querySelector('.chat-welcome');
+            if (welcome) {
+                welcome.remove();
+            }
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'ai'}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message__content';
+            contentDiv.textContent = text;
+            
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message__time';
+            timeDiv.textContent = new Date().toLocaleTimeString('es-MX', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            messageDiv.appendChild(contentDiv);
+            messageDiv.appendChild(timeDiv);
+            chatWindow.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+        
+        function showTypingIndicator() {
+            const chatWindow = document.getElementById('chatWindow');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message ai';
+            typingDiv.id = 'typingIndicator';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message__content';
+            
+            const indicatorDiv = document.createElement('div');
+            indicatorDiv.className = 'typing-indicator';
+            
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('span');
+                indicatorDiv.appendChild(dot);
+            }
+            
+            contentDiv.appendChild(indicatorDiv);
+            typingDiv.appendChild(contentDiv);
+            chatWindow.appendChild(typingDiv);
+            
+            // Scroll to bottom
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+        
+        function hideTypingIndicator() {
+            const typingIndicator = document.getElementById('typingIndicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+        
+        function clearChatHistory() {
+            const chatWindow = document.getElementById('chatWindow');
+            chatWindow.innerHTML = `
+                <div class="chat-welcome">
+                    <div class="chat-welcome__icon">👋</div>
+                    <h3>¡Hola! Soy tu asistente médico AI</h3>
+                    <p>Puedes preguntarme sobre síntomas, medicamentos, o cualquier duda médica. Recuerda que esto no sustituye la consulta con tu médico.</p>
+                </div>
+            `;
+            chatMessages = [];
+        }
+        
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+        
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files || []);
+            if (files.length) {
+                alert(`Archivos añadidos localmente (vista previa): ${files.map(f => f.name).join(', ')}`);
+            }
+        }
+        
+        function saveProfile() {
+            alert('Perfil guardado exitosamente');
+        }
+        
+        function scheduleAppointment() {
+            const date = document.getElementById('appointmentDate').value;
+            const time = document.getElementById('appointmentTime').value;
+            
+            if (!date) {
+                alert('Por favor selecciona una fecha');
+                return;
+            }
+            
+            alert(`Cita agendada para ${date}${time ? ` a las ${time}` : ''}`);
+            
+            // Clear form
+            document.getElementById('appointmentDate').value = '';
+            document.getElementById('appointmentTime').value = '';
+        }
+        
+        // Función para dibujar gráfica simple de síntomas
+        function drawMobileChart() {
+            const canvas = document.getElementById('mobileSymptomsChart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // Limpiar canvas
+            ctx.clearRect(0, 0, width, height);
+            
+            // Datos de ejemplo
+            const data = [
+                { day: 'Lun', value: 2 },
+                { day: 'Mar', value: 1 },
+                { day: 'Mié', value: 3 },
+                { day: 'Jue', value: 2 },
+                { day: 'Vie', value: 1 },
+                { day: 'Sáb', value: 0 },
+                { day: 'Dom', value: 1 }
+            ];
+            
+            const padding = 40;
+            const chartWidth = width - (padding * 2);
+            const chartHeight = height - (padding * 2);
+            
+            // Dibujar ejes
+            ctx.strokeStyle = 'rgba(155,179,209,0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(padding, padding);
+            ctx.lineTo(padding, height - padding);
+            ctx.lineTo(width - padding, height - padding);
+            ctx.stroke();
+            
+            // Dibujar líneas de referencia
+            for (let i = 0; i <= 4; i++) {
+                const y = padding + (chartHeight / 4) * i;
+                ctx.strokeStyle = 'rgba(155,179,209,0.1)';
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+            }
+            
+            // Dibujar línea de datos
+            ctx.strokeStyle = '#52e5ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            data.forEach((point, index) => {
+                const x = padding + (chartWidth / (data.length - 1)) * index;
+                const y = height - padding - (chartHeight / 4) * point.value;
+                
+                if (index === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                
+                // Dibujar punto
+                ctx.fillStyle = '#52e5ff';
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            ctx.stroke();
+            
+            // Dibujar etiquetas de días
+            ctx.fillStyle = '#9bb3d1';
+            ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.textAlign = 'center';
+            
+            data.forEach((point, index) => {
+                const x = padding + (chartWidth / (data.length - 1)) * index;
+                ctx.fillText(point.day, x, height - padding + 20);
+            });
+        }
+        
+        // Función para actualizar métricas móviles
+        function updateMobileMetrics() {
+            // Simular datos dinámicos
+            const upcomingAppointments = Math.floor(Math.random() * 5) + 1;
+            const daysWithoutSymptoms = Math.floor(Math.random() * 14) + 1;
+            const complianceRate = Math.floor(Math.random() * 30) + 70;
+            const medications = Math.floor(Math.random() * 3) + 1;
+            
+            document.getElementById('mobileUpcomingAppointments').textContent = upcomingAppointments;
+            document.getElementById('mobileDaysWithoutSymptoms').textContent = daysWithoutSymptoms;
+            document.getElementById('mobileComplianceRate').textContent = complianceRate + '%';
+            document.getElementById('mobileMedications').textContent = medications;
+        }
+        
+        // Simular carga inicial con credenciales demo
+        setTimeout(() => {
+            document.getElementById('email').value = 'paciente@demo.com';
+            document.getElementById('password').value = '123456';
+            
+            // Inicializar gráfica y métricas
+            setTimeout(() => {
+                drawMobileChart();
+                updateMobileMetrics();
+            }, 1000);
+        }, 500);
+    </script>
+</body>
+</html>
