@@ -1175,7 +1175,7 @@ export default function PatientView() {
             {/* Área para embed del avatar médico */}
             <div className="avatar-panel__embed">
               <iframe
-                src="https://stunning-crisp-51ccb2.netlify.app/"
+                src="https://nimble-gnome-492d1f.netlify.app/"
                 title="Avatar Médico"
                 className="avatar-panel__iframe"
                 allow="microphone; camera; autoplay; encrypted-media"

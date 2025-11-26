@@ -51,7 +51,8 @@ $services = @(
     @{ Name = "auth";    Path = "services/auth_service/app.py";    Port = 8010 },
     @{ Name = "doctor";  Path = "services/doctor_service/app.py";  Port = 8011 },
     @{ Name = "patient"; Path = "services/patient_service/app.py"; Port = 8012 },
-    @{ Name = "ai";      Path = "services/ai_service/app.py";      Port = 8013 }
+    @{ Name = "ai";      Path = "services/ai_service/app.py";      Port = 8013 },
+    @{ Name = "jwt";     Path = "services/jwt_service/app.py";     Port = 8014 }
 )
 
 foreach ($svc in $services) {
