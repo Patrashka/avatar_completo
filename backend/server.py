@@ -1,8 +1,13 @@
 import os
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 load_dotenv()
 
@@ -10,6 +15,51 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 CORS(app)
+
+# ===== MongoDB setup =====
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
+MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+MONGO_DB_NAME = os.getenv("MONGO_DB", "medico_mongo")
+MONGO_USER = os.getenv("MONGO_USER")
+MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
+
+_mongo_client: Optional[MongoClient] = None
+_mongo_db = None
+
+
+def _build_mongo_uri() -> str:
+    if MONGO_URI:
+        return MONGO_URI
+    auth_part = ""
+    if MONGO_USER and MONGO_PASSWORD:
+        auth_part = f"{MONGO_USER}:{MONGO_PASSWORD}@"
+    return f"mongodb://{auth_part}{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}?authSource=admin"
+
+
+def get_mongo_collection(name: str):
+    global _mongo_client, _mongo_db
+    if _mongo_client is None:
+        uri = _build_mongo_uri()
+        _mongo_client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+    if _mongo_db is None:
+        _mongo_db = _mongo_client[MONGO_DB_NAME]
+    return _mongo_db[name]
+
+
+def _safe_int(value: Any):
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
 
 # ===== GEMINI =====
 GEMINI_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
@@ -53,6 +103,84 @@ def is_mobile_client():
     """Detect if request is from mobile app"""
     user_agent = request.headers.get('User-Agent', '').lower()
     return 'mobile' in user_agent or 'android' in user_agent or 'ios' in user_agent
+
+# ===== D-ID Conversations =====
+@app.post("/api/did/conversations")
+def save_did_conversation():
+    data: Dict[str, Any] = request.get_json(silent=True) or {}
+    role = data.get("role")
+    if role not in {"user", "agent"}:
+        return jsonify({"error": "El campo 'role' es obligatorio y debe ser 'user' o 'agent'."}), 400
+
+    text = (data.get("text") or "").strip()
+    audio_url = data.get("audioUrl")
+    if not text and not audio_url:
+        return jsonify({"error": "Debe incluir 'text' o 'audioUrl'."}), 400
+
+    doc: Dict[str, Any] = {
+        "role": role,
+        "text": text,
+        "audio_url": audio_url,
+        "patient_id": _safe_int(data.get("patientId")),
+        "consulta_id": _safe_int(data.get("consultaId")),
+        "usuario_id": _safe_int(data.get("usuarioId")),
+        "agent_session_id": data.get("agentSessionId"),
+        "agent_conversation_id": data.get("agentConversationId"),
+        "message_id": data.get("messageId"),
+        "session_uuid": data.get("sessionUuid"),
+        "agent_url": data.get("agentUrl"),
+        "agent_origin": data.get("agentOrigin"),
+        "started_at": data.get("startedAt"),
+        "finished_at": data.get("finishedAt"),
+        "metadata": data.get("metadata") or {},
+        "created_at": datetime.utcnow(),
+    }
+
+    doc = {k: v for k, v in doc.items() if v not in (None, "")}
+
+    try:
+        collection = get_mongo_collection("did_conversations")
+        result = collection.insert_one(doc)
+    except PyMongoError as exc:
+        return jsonify({"error": f"MongoDB no disponible: {exc}"}), 503
+
+    return jsonify({"id": str(result.inserted_id)}), 201
+
+
+@app.get("/api/did/conversations")
+def list_did_conversations():
+    try:
+        collection = get_mongo_collection("did_conversations")
+    except PyMongoError as exc:
+        return jsonify({"error": f"MongoDB no disponible: {exc}"}), 503
+
+    try:
+        limit = max(1, min(int(request.args.get("limit", 50)), 500))
+    except ValueError:
+        limit = 50
+
+    query: Dict[str, Any] = {}
+    patient_id = _safe_int(request.args.get("patientId"))
+    consulta_id = _safe_int(request.args.get("consultaId"))
+    session_uuid = request.args.get("sessionUuid")
+
+    if patient_id is not None:
+        query["patient_id"] = patient_id
+    if consulta_id is not None:
+        query["consulta_id"] = consulta_id
+    if session_uuid:
+        query["session_uuid"] = session_uuid
+
+    items = []
+    try:
+        cursor = collection.find(query).sort("created_at", 1).limit(limit)
+        for doc in cursor:
+            doc["id"] = str(doc.pop("_id"))
+            items.append(doc)
+    except PyMongoError as exc:
+        return jsonify({"error": f"MongoDB no disponible: {exc}"}), 503
+
+    return jsonify({"items": items, "count": len(items)})
 
 
 # ===== IA: Doctor (XML ONLY) =====

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:15
@@ -11,8 +9,12 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
+      - ./scripts/init/init-postgres.sql:/docker-entrypoint-initdb.d/01-init-postgres.sql
+      - ./scripts/procedures/stored_procedures.sql:/docker-entrypoint-initdb.d/02-stored-procedures.sql
       - postgres_data:/var/lib/postgresql/data
+    # Nota: Este docker-compose es compartido con cms_main
+    # Ambos proyectos usan la misma base de datos: medico_db
+    # Estructura organizada: scripts/init, scripts/procedures, scripts/data, migrations, tests, docs, utils
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin"]
       interval: 10s
@@ -31,7 +33,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./scripts/init/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
       - mongo_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]

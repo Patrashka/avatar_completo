@@ -3,17 +3,9 @@ Microservicio de Gestión de JWT Tokens con Redis
 Proporciona endpoints para autenticación, validación y gestión de tokens JWT
 """
 import os
-import sys
-import pathlib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-
-# Agregar el directorio actual al path para imports
-ROOT_DIR = pathlib.Path(__file__).resolve().parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
-
 from jwt_service import JWTService
 from redis_service import RedisService
 import logging
@@ -32,34 +24,19 @@ app = Flask(__name__)
 CORS(app)
 
 # Inicializar servicios
-try:
-    redis_service = RedisService()
-    jwt_service = JWTService(redis_service)
-    REDIS_AVAILABLE = True
-except Exception as e:
-    logger.error(f"Error inicializando servicios: {e}")
-    REDIS_AVAILABLE = False
-    redis_service = None
-    jwt_service = None
+redis_service = RedisService()
+jwt_service = JWTService(redis_service)
 
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Endpoint de salud del microservicio"""
     try:
-        if not REDIS_AVAILABLE:
-            return jsonify({
-                "status": "unhealthy",
-                "redis": "disconnected",
-                "service": "redis_service",
-                "error": "Redis no disponible"
-            }), 503
-        
         redis_status = redis_service.check_connection()
         return jsonify({
-            "status": "healthy" if redis_status else "degraded",
+            "status": "healthy",
             "redis": "connected" if redis_status else "disconnected",
-            "service": "jwt-redis-service"
+            "service": "redis_service"
         }), 200
     except Exception as e:
         logger.error(f"Health check error: {e}")
@@ -84,9 +61,6 @@ def login():
     }
     """
     try:
-        if not REDIS_AVAILABLE:
-            return jsonify({"error": "Servicio JWT no disponible"}), 503
-        
         data = request.get_json()
         
         if not data:
@@ -102,6 +76,9 @@ def login():
             return jsonify({
                 "error": "username, password y user_id son requeridos"
             }), 400
+        
+        # Aquí normalmente validarías las credenciales contra tu base de datos
+        # Por ahora, asumimos que las credenciales son válidas
         
         # Generar tokens
         tokens = jwt_service.generate_tokens(
@@ -137,9 +114,6 @@ def validate_token():
     O header Authorization: Bearer <token>
     """
     try:
-        if not REDIS_AVAILABLE:
-            return jsonify({"error": "Servicio JWT no disponible"}), 503
-        
         # Intentar obtener token del header primero
         auth_header = request.headers.get('Authorization')
         token = None
@@ -184,9 +158,6 @@ def refresh_token():
     }
     """
     try:
-        if not REDIS_AVAILABLE:
-            return jsonify({"error": "Servicio JWT no disponible"}), 503
-        
         data = request.get_json()
         
         if not data:
@@ -231,9 +202,6 @@ def logout():
     O header Authorization: Bearer <token>
     """
     try:
-        if not REDIS_AVAILABLE:
-            return jsonify({"error": "Servicio JWT no disponible"}), 503
-        
         # Intentar obtener token del header primero
         auth_header = request.headers.get('Authorization')
         token = None
@@ -275,9 +243,6 @@ def get_user_info():
     Requiere header: Authorization: Bearer <token>
     """
     try:
-        if not REDIS_AVAILABLE:
-            return jsonify({"error": "Servicio JWT no disponible"}), 503
-        
         auth_header = request.headers.get('Authorization')
         
         if not auth_header or not auth_header.startswith('Bearer '):
@@ -310,19 +275,7 @@ def get_user_info():
 
 
 if __name__ == '__main__':
-    # Agregar el directorio raíz al path para imports
-    ROOT_DIR = pathlib.Path(__file__).resolve().parents[2]
-    if str(ROOT_DIR) not in sys.path:
-        sys.path.append(str(ROOT_DIR))
-    
-    try:
-        from services.common.config import ServiceConfig
-        config = ServiceConfig(port=int(sys.argv[1]) if len(sys.argv) > 1 else 8014)
-        port = config.port
-    except ImportError:
-        # Si no está disponible, usar valores por defecto
-        port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.getenv('PORT', 8014))
-    
+    port = int(os.getenv('PORT', 5001))
     debug = os.getenv('DEBUG', 'False').lower() == 'true'
     
     logger.info(f"Iniciando microservicio JWT-Redis en puerto {port}")

@@ -1,19 +1,47 @@
 # Base de Datos - Sistema Médico
 
-Esta carpeta contiene la configuración completa de las bases de datos para el sistema médico.
+Este directorio contiene toda la configuración consolidada de las bases de datos para el sistema médico. Los archivos están organizados en subdirectorios para facilitar el mantenimiento.
 
-## Estructura
+## 📁 Estructura de Directorios
 
-- `docker-compose.yml` - Configuración de Docker para PostgreSQL y MongoDB
-- `init-postgres.sql` - Script de inicialización de PostgreSQL con esquema y datos de ejemplo
-- `init-mongo.js` - Script de inicialización de MongoDB con colecciones y validaciones
+```
+database/
+├── docker-compose.yml          # Configuración Docker (PostgreSQL + MongoDB)
+├── scripts/
+│   ├── init/                  # Scripts de inicialización
+│   │   ├── init-postgres.sql  # Esquema y datos iniciales de PostgreSQL
+│   │   └── init-mongo.js      # Inicialización de MongoDB
+│   ├── procedures/            # Stored Procedures
+│   │   └── stored_procedures.sql  # Todos los stored procedures con sufijo _sp
+│   └── data/                  # Scripts de inserción de datos de prueba
+│       ├── insert_patient.sql
+│       ├── insert_test_doctors.sql
+│       └── insert_test_profiles.sql
+├── migrations/                # Scripts de migración
+│   ├── migrate-to-correct-schema.sql
+│   └── update_database.sql
+├── tests/                     # Scripts de prueba
+│   ├── test_connections.py
+│   ├── test_services_health.py
+│   └── verificar_bd.py
+├── docs/                      # Documentación
+│   ├── README.md (este archivo)
+│   ├── DATABASE_SHARED_CONFIG.md
+│   ├── VERIFICATION_REPORT.md
+│   ├── MIGRATION_TO_SP_SUFFIX.md
+│   └── VERIFICACION_BD.md
+└── utils/                     # Utilidades
+    ├── show_credentials.py
+    ├── verify_all_services.ps1
+    └── verify_shared_db.ps1
+```
 
-## Inicio Rápido
+## 🚀 Inicio Rápido
 
 ### 1. Iniciar las bases de datos
 
 ```bash
-cd final/database
+cd database
 docker-compose up -d
 ```
 
@@ -39,7 +67,7 @@ docker-compose down
 docker-compose logs -f
 ```
 
-## Configuración
+## ⚙️ Configuración
 
 ### PostgreSQL
 
@@ -56,10 +84,10 @@ docker-compose logs -f
 - **Base de datos:** medico_mongo
 - **Usuario root:** admin
 - **Contraseña root:** admin123
-- **Usuario app:** app_user
-- **Contraseña app:** app_password
 
-## Variables de Entorno
+## 🔧 Variables de Entorno
+
+### Para Python (avatar_completo)
 
 Agrega estas variables a tu archivo `.env` en `frontend/`:
 
@@ -79,7 +107,19 @@ MONGO_USER=app_user
 MONGO_PASSWORD=app_password
 ```
 
-## Estructura de Datos
+### Para Node.js (cms_main)
+
+Agrega estas variables a tu archivo `.env` en `cms_back/`:
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=medico_db
+DB_USER=admin
+DB_PASSWORD=admin123
+```
+
+## 📊 Estructura de Datos
 
 ### PostgreSQL
 
@@ -92,36 +132,61 @@ Contiene:
 ### MongoDB
 
 Contiene:
-- `sesion_avatar` - Sesiones de avatar médico
-- `turno_conversacion` - Turnos de conversación
+- `did_conversations` - Conversaciones con el avatar
+- `sesion_avatar` - Sesiones de avatar
 - `interaccion_ia` - Interacciones con la IA
 - `consulta_doc` - Documentos de consulta
-- `resumen_conversacion` - Resúmenes de conversaciones
 
-## Conexión desde Python
+## 🔄 Stored Procedures
 
-El módulo `db_connection.py` en `frontend/` maneja todas las conexiones:
+Todos los stored procedures usan el sufijo `_sp` para mantener consistencia:
 
-```python
-from db_connection import (
-    get_patient_by_id,
-    save_ia_interaction,
-    get_patient_interactions
-)
+- `get_patient_by_id_sp()`
+- `get_patient_consultations_sp()`
+- `get_patient_files_sp()`
+- `get_patient_diagnoses_sp()`
+- `get_doctor_by_id_sp()`
+- `get_doctor_patients_sp()`
+- `get_doctor_patient_sp()`
+- `search_doctor_patients_sp()`
+- `update_patient_sp()`
+- `update_consultation_sp()`
 
-# Obtener paciente
-patient = get_patient_by_id(1)
+Ver `scripts/procedures/stored_procedures.sql` para la lista completa.
 
-# Guardar interacción
-save_ia_interaction(
-    tipo="avatar",
-    mensaje_usuario="Hola",
-    respuesta_ia="Hola, ¿cómo puedo ayudarte?",
-    paciente_id=1
-)
+## 🧪 Pruebas
+
+### Probar conexiones
+
+```bash
+# Python
+python tests/test_connections.py
+
+# PowerShell
+.\utils\verify_all_services.ps1
 ```
 
-## Resolución de Problemas
+### Verificar configuración compartida
+
+```bash
+.\utils\verify_shared_db.ps1
+```
+
+## 📚 Documentación Adicional
+
+- `docs/DATABASE_SHARED_CONFIG.md` - Configuración compartida entre proyectos
+- `docs/VERIFICATION_REPORT.md` - Reporte de verificación
+- `docs/MIGRATION_TO_SP_SUFFIX.md` - Guía de migración de stored procedures
+
+## 🔄 Migraciones
+
+Si necesitas aplicar cambios al esquema existente, usa los scripts en `migrations/`:
+
+```bash
+docker exec -i medico_postgres psql -U admin -d medico_db < migrations/migrate-to-correct-schema.sql
+```
+
+## 🐛 Resolución de Problemas
 
 ### Error de conexión a PostgreSQL
 
@@ -153,9 +218,16 @@ docker-compose down -v
 docker-compose up -d
 ```
 
-## Notas
+## 📝 Notas
 
 - Los datos de ejemplo se cargan automáticamente al iniciar los contenedores por primera vez
 - Los volúmenes de Docker persisten los datos entre reinicios
 - Para desarrollo, puedes usar `docker-compose down -v` para limpiar todo
+- Este directorio es compartido entre `avatar_completo` y `cms_main`
+
+## 🔗 Referencias
+
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [MongoDB Documentation](https://docs.mongodb.com/)
+- [Docker Compose Documentation](https://docs.docker.com/compose/)
 

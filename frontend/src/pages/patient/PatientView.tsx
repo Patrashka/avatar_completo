@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { api } from "../../services/api";
 import toast from "react-hot-toast";
 
@@ -149,6 +149,50 @@ type ChatMessage = {
   timestamp: Date;
 };
 
+type ConversationRole = "user" | "agent";
+
+type ConversationTurnPayload = {
+  role: ConversationRole;
+  text: string;
+  patientId: number | null;
+  consultaId: number | null;
+  usuarioId: number | null;
+  sessionUuid: string;
+  messageId?: string | null;
+  audioUrl?: string | null;
+  agentSessionId?: string | null;
+  agentConversationId?: string | null;
+  agentUrl?: string;
+  agentOrigin?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+const DID_EVENT_TYPES = new Set(["conversation.transcription", "conversation.agent_response"]);
+const DID_DEFAULT_IFRAME_SRC = "https://nimble-gnome-492d1f.netlify.app/";
+const DID_DEFAULT_ORIGIN = "https://agents.d-id.com";
+
+const generateSessionUuid = (): string => {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // ignore - fallback will be used
+  }
+  return `did-session-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+};
+
+const toIsoString = (value?: number | string | null): string | undefined => {
+  if (value === undefined || value === null) return undefined;
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return undefined;
+  }
+};
+
 export default function PatientView() {
   const [state, setState] = useState<State>(getInitialState());
   const [loading, setLoading] = useState(true);
@@ -189,12 +233,35 @@ export default function PatientView() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const streamIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const didIframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeReadyRef = useRef(false);
+  const partialTranscriptsRef = useRef<Record<string, string>>({});
+  const conversationSessionUuidRef = useRef<string>(generateSessionUuid());
   const [previewFile, setPreviewFile] = useState<Archivo | null>(null);
 
 
   const DEFAULT_API = import.meta.env.VITE_API || "http://localhost:8080";
   const AI_API = import.meta.env.VITE_AI_API || DEFAULT_API;
   const AUTH_API = import.meta.env.VITE_AUTH_API || DEFAULT_API;
+  const DID_IFRAME_SRC = import.meta.env.VITE_DID_IFRAME_SRC || DID_DEFAULT_IFRAME_SRC;
+  const CUSTOM_DID_ORIGIN = import.meta.env.VITE_DID_ALLOWED_ORIGIN?.trim();
+  const didIframeOrigin = useMemo(() => {
+    try {
+      return new URL(DID_IFRAME_SRC).origin;
+    } catch {
+      return DID_DEFAULT_ORIGIN;
+    }
+  }, [DID_IFRAME_SRC]);
+  const allowedDidOrigins = useMemo(() => {
+    const base = new Set<string>([DID_DEFAULT_ORIGIN]);
+    if (didIframeOrigin) base.add(didIframeOrigin);
+    if (CUSTOM_DID_ORIGIN) base.add(CUSTOM_DID_ORIGIN);
+    return Array.from(base);
+  }, [CUSTOM_DID_ORIGIN, didIframeOrigin]);
+  const conversationEndpoint = useMemo(
+    () => `${AI_API}/api/did/conversations`,
+    [AI_API]
+  );
 
   // Cargar datos desde la BD al montar el componente
   useEffect(() => {
@@ -348,6 +415,10 @@ export default function PatientView() {
   };
 
 
+  const patientId = state.PACIENTE.id || null;
+  const consultaId = state.CONSULTA.id || null;
+  const usuarioId = state.PACIENTE.usuario_id || null;
+
   // Datos calculados
   const nombreCompleto = `${state.PACIENTE.nombre} ${state.PACIENTE.apellido}`.trim() || "—";
   const edad = useMemo(() => {
@@ -380,6 +451,151 @@ export default function PatientView() {
         return { ...a, archivo, interpretacion };
       });
   }, [state]);
+
+  const persistConversationTurn = useCallback(async (payload: ConversationTurnPayload) => {
+    if (!payload.text && !payload.audioUrl) {
+      return;
+    }
+    try {
+      await fetch(conversationEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.warn("No se pudo guardar turno de conversación del avatar:", error);
+    }
+  }, [conversationEndpoint]);
+
+  const handleDidConversationEvent = useCallback((eventType: string, data: Record<string, any>) => {
+    if (!DID_EVENT_TYPES.has(eventType)) {
+      return;
+    }
+    const payload = data?.message ?? data?.payload ?? data;
+    const messageId =
+      payload?.id ??
+      data?.messageId ??
+      data?.responseId ??
+      data?.eventId ??
+      `msg-${Date.now()}`;
+    const textChunk = (payload?.text ?? data?.text ?? "").trim();
+    const rawIsFinal = payload?.isFinal ?? payload?.is_final ?? data?.isFinal ?? data?.is_final;
+    const isFinal = typeof rawIsFinal === "boolean" ? rawIsFinal : true;
+
+    if (!isFinal) {
+      if (textChunk) {
+        partialTranscriptsRef.current[messageId] = `${partialTranscriptsRef.current[messageId] || ""}${textChunk} `;
+      }
+      return;
+    }
+
+    const bufferedText = partialTranscriptsRef.current[messageId] || "";
+    delete partialTranscriptsRef.current[messageId];
+    const finalText = (bufferedText + (textChunk || "")).trim();
+    const audioUrl =
+      payload?.audioUrl ??
+      payload?.audio?.url ??
+      data?.audioUrl ??
+      data?.audio?.url ??
+      null;
+    const agentSessionId =
+      data?.session_id ?? data?.sessionId ?? data?.session?.id ?? payload?.sessionId ?? null;
+    const agentConversationId =
+      data?.conversation_id ??
+      data?.conversationId ??
+      data?.conversation?.id ??
+      payload?.conversation_id ??
+      null;
+    const timestamps = payload?.timestamps ?? data?.timestamps ?? {};
+    const startedAt = toIsoString(timestamps.start) || new Date().toISOString();
+    const finishedAt = toIsoString(timestamps.end) || startedAt;
+    const role: ConversationRole =
+      eventType === "conversation.transcription" ? "user" : "agent";
+
+    if (!finalText && !audioUrl) {
+      return;
+    }
+
+    void persistConversationTurn({
+      role,
+      text: finalText,
+      audioUrl,
+      messageId,
+      agentSessionId,
+      agentConversationId,
+      patientId,
+      consultaId,
+      usuarioId,
+      sessionUuid: conversationSessionUuidRef.current,
+      agentUrl: DID_IFRAME_SRC,
+      agentOrigin: didIframeOrigin,
+      startedAt,
+      finishedAt,
+      metadata: {
+        eventType,
+        source: "did-iframe",
+        iframeOrigin: didIframeOrigin,
+      },
+    });
+  }, [consultaId, didIframeOrigin, patientId, persistConversationTurn, usuarioId, DID_IFRAME_SRC]);
+
+  const isAllowedDidOrigin = useCallback((origin: string) => {
+    if (!origin) return false;
+    if (allowedDidOrigins.includes(origin)) {
+      return true;
+    }
+    try {
+      const hostname = new URL(origin).hostname;
+      return hostname.endsWith(".d-id.com");
+    } catch {
+      return false;
+    }
+  }, [allowedDidOrigins]);
+
+  const subscribeToIframeEvents = useCallback(() => {
+    const iframeWindow = didIframeRef.current?.contentWindow;
+    if (!iframeWindow) return;
+    try {
+      iframeWindow.postMessage(
+        {
+          type: "subscribe",
+          events: Array.from(DID_EVENT_TYPES),
+        },
+        didIframeOrigin || "*"
+      );
+    } catch (error) {
+      console.warn("No se pudo suscribir al iframe de D-ID:", error);
+    }
+  }, [didIframeOrigin]);
+
+  const handleIframeLoad = useCallback(() => {
+    iframeReadyRef.current = true;
+    subscribeToIframeEvents();
+  }, [subscribeToIframeEvents]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (!isAllowedDidOrigin(event.origin)) {
+        return;
+      }
+      const eventType = (event.data?.type || event.data?.event) as string | undefined;
+      if (!eventType || !DID_EVENT_TYPES.has(eventType)) {
+        return;
+      }
+      handleDidConversationEvent(eventType, event.data || {});
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [handleDidConversationEvent, isAllowedDidOrigin]);
+
+  useEffect(() => {
+    if (iframeReadyRef.current) {
+      subscribeToIframeEvents();
+    }
+  }, [subscribeToIframeEvents]);
 
   // Iniciar avatar médico
   const startAvatar = async () => {
@@ -1175,7 +1391,9 @@ export default function PatientView() {
             {/* Área para embed del avatar médico */}
             <div className="avatar-panel__embed">
               <iframe
-                src="https://nimble-gnome-492d1f.netlify.app/"
+                ref={didIframeRef}
+                onLoad={handleIframeLoad}
+                src={DID_IFRAME_SRC}
                 title="Avatar Médico"
                 className="avatar-panel__iframe"
                 allow="microphone; camera; autoplay; encrypted-media"

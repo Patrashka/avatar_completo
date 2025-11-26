@@ -3,10 +3,10 @@
 -- ===========================================
 
 -- Procedimiento para obtener paciente por ID
-CREATE OR REPLACE FUNCTION get_patient_by_id(patient_id INTEGER)
+CREATE OR REPLACE FUNCTION get_patient_by_id_sp(patient_id INTEGER)
 RETURNS TABLE (
     id INTEGER,
-    nombre TEXT,
+    nombre VARCHAR(200),
     fecha_nacimiento DATE,
     sexo VARCHAR(10),
     altura NUMERIC,
@@ -28,7 +28,7 @@ RETURNS TABLE (
     estado_civil_id INTEGER,
     estado_civil_nombre VARCHAR(50),
     medico_id INTEGER,
-    medico_nombre TEXT
+    medico_nombre VARCHAR(200)
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -39,8 +39,8 @@ BEGIN
         p.sexo, 
         p.altura, 
         p.peso,
-        p.estilo_vida, 
-        p.alergias, 
+        p.estilo_vida::TEXT, 
+        p.alergias::TEXT, 
         p.telefono, 
         p.correo, 
         p.direccion,
@@ -67,7 +67,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para obtener consultas de un paciente
-CREATE OR REPLACE FUNCTION get_patient_consultations(patient_id INTEGER, limit_count INTEGER DEFAULT 10)
+CREATE OR REPLACE FUNCTION get_patient_consultations_sp(patient_id INTEGER, limit_count INTEGER DEFAULT 10)
 RETURNS TABLE (
     id INTEGER,
     fecha_hora TIMESTAMP,
@@ -89,7 +89,7 @@ BEGIN
         c.diagnostico_final,
         m.nombre as medico_nombre,
         ec.nombre as estado_consulta,
-        c.mongo_consulta_id,
+        c.mongo_consulta_id::TEXT,
         c.cita_id,
         c.id_estado_consulta,
         c.id_episodio
@@ -103,7 +103,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para obtener archivos de un paciente
-CREATE OR REPLACE FUNCTION get_patient_files(patient_id INTEGER)
+CREATE OR REPLACE FUNCTION get_patient_files_sp(patient_id INTEGER)
 RETURNS TABLE (
     id INTEGER,
     tipo VARCHAR(50),
@@ -133,7 +133,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para obtener diagnósticos de un paciente
-CREATE OR REPLACE FUNCTION get_patient_diagnoses(patient_id INTEGER)
+CREATE OR REPLACE FUNCTION get_patient_diagnoses_sp(patient_id INTEGER)
 RETURNS TABLE (
     id INTEGER,
     codigo_icd10 VARCHAR(20),
@@ -161,7 +161,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para obtener paciente asignado a un médico
-CREATE OR REPLACE FUNCTION get_doctor_patient(doctor_id INTEGER)
+CREATE OR REPLACE FUNCTION get_doctor_patient_sp(doctor_id INTEGER)
 RETURNS TABLE (
     id INTEGER,
     nombre TEXT,
@@ -195,11 +195,11 @@ BEGIN
         p.sexo, 
         p.altura, 
         p.peso,
-        p.estilo_vida, 
-        p.alergias, 
-        p.telefono, 
-        p.correo, 
-        p.direccion,
+        p.estilo_vida::TEXT, 
+        p.alergias::TEXT, 
+        p.telefono::TEXT, 
+        p.correo::TEXT, 
+        p.direccion::TEXT,
         p.usuario_id,
         p.id_tipo_sangre,
         p.id_ocupacion,
@@ -221,8 +221,68 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Procedimiento para obtener TODOS los pacientes asignados a un médico
+CREATE OR REPLACE FUNCTION get_doctor_patients_sp(doctor_id INTEGER)
+RETURNS TABLE (
+    id INTEGER,
+    nombre VARCHAR(200),
+    fecha_nacimiento DATE,
+    sexo VARCHAR(10),
+    altura NUMERIC,
+    peso NUMERIC,
+    estilo_vida TEXT,
+    alergias TEXT,
+    telefono VARCHAR(20),
+    correo VARCHAR(100),
+    direccion TEXT,
+    usuario_id INTEGER,
+    id_tipo_sangre INTEGER,
+    id_ocupacion INTEGER,
+    id_estado_civil INTEGER,
+    id_medico_gen INTEGER,
+    tipo_sangre_id INTEGER,
+    tipo_sangre_nombre VARCHAR(10),
+    ocupacion_id INTEGER,
+    ocupacion_nombre VARCHAR(100),
+    estado_civil_id INTEGER,
+    estado_civil_nombre VARCHAR(50)
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id, 
+        p.nombre::VARCHAR(200), 
+        p.fecha_nacimiento, 
+        p.sexo, 
+        p.altura, 
+        p.peso,
+        p.estilo_vida::TEXT, 
+        p.alergias::TEXT, 
+        p.telefono, 
+        p.correo, 
+        p.direccion,
+        p.usuario_id,
+        p.id_tipo_sangre,
+        p.id_ocupacion,
+        p.id_estado_civil,
+        p.id_medico_gen,
+        ts.id as tipo_sangre_id,
+        ts.tipo as tipo_sangre_nombre,
+        oc.id as ocupacion_id,
+        oc.nombre as ocupacion_nombre,
+        ec.id as estado_civil_id,
+        ec.nombre as estado_civil_nombre
+    FROM PACIENTE p
+    LEFT JOIN TIPO_SANGRE ts ON p.id_tipo_sangre = ts.id
+    LEFT JOIN OCUPACION oc ON p.id_ocupacion = oc.id
+    LEFT JOIN ESTADO_CIVIL ec ON p.id_estado_civil = ec.id
+    WHERE p.id_medico_gen = doctor_id
+    ORDER BY p.nombre, p.id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Procedimiento para buscar pacientes de un médico por nombre/correo/ID
-CREATE OR REPLACE FUNCTION search_doctor_patients(
+CREATE OR REPLACE FUNCTION search_doctor_patients_sp(
     doctor_id INTEGER,
     search_term TEXT,
     limit_count INTEGER DEFAULT 10
@@ -297,7 +357,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para actualizar paciente
-CREATE OR REPLACE FUNCTION update_patient(
+CREATE OR REPLACE FUNCTION update_patient_sp(
     p_id INTEGER,
     p_nombre TEXT,
     p_fecha_nacimiento DATE,
@@ -330,7 +390,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para actualizar consulta
-CREATE OR REPLACE FUNCTION update_consultation(
+CREATE OR REPLACE FUNCTION update_consultation_sp(
     c_id INTEGER,
     c_narrativa TEXT,
     c_diagnostico_final TEXT
@@ -347,10 +407,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para obtener médico por ID
-CREATE OR REPLACE FUNCTION get_doctor_by_id(doctor_id INTEGER)
+CREATE OR REPLACE FUNCTION get_doctor_by_id_sp(doctor_id INTEGER)
 RETURNS TABLE (
     id INTEGER,
-    nombre TEXT,
+    nombre VARCHAR(200),
     cedula VARCHAR(50),
     telefono VARCHAR(20),
     correo VARCHAR(100),
@@ -364,7 +424,7 @@ BEGIN
     RETURN QUERY
     SELECT 
         m.id,
-        m.nombre,
+        m.nombre::VARCHAR(200),
         m.cedula,
         m.telefono,
         m.correo,
@@ -372,7 +432,7 @@ BEGIN
         m.descripcion,
         m.usuario_id,
         m.id_especialidad,
-        e.nombre as especialidad_nombre
+        e.nombre::VARCHAR(100) as especialidad_nombre
     FROM MEDICO m
     LEFT JOIN ESPECIALIDAD e ON m.id_especialidad = e.id
     WHERE m.id = doctor_id;
@@ -380,19 +440,20 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Procedimiento para obtener catálogos
-CREATE OR REPLACE FUNCTION get_catalogos()
+CREATE OR REPLACE FUNCTION get_catalogos_sp()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
 BEGIN
     SELECT json_build_object(
-        'TIPO_SANGRE', (SELECT json_agg(json_build_object('id', id, 'nombre', tipo)) FROM TIPO_SANGRE ORDER BY id),
-        'OCUPACION', (SELECT json_agg(json_build_object('id', id, 'nombre', nombre)) FROM OCUPACION ORDER BY id),
-        'ESTADO_CIVIL', (SELECT json_agg(json_build_object('id', id, 'nombre', nombre)) FROM ESTADO_CIVIL ORDER BY id),
-        'ESPECIALIDAD', (SELECT json_agg(json_build_object('id', id, 'nombre', nombre)) FROM ESPECIALIDAD ORDER BY id),
-        'ESTADO_CITA', (SELECT json_agg(json_build_object('id', id, 'nombre', nombre)) FROM ESTADO_CITA ORDER BY id),
-        'TIPO_CITA', (SELECT json_agg(json_build_object('id', id, 'nombre', nombre)) FROM TIPO_CITA ORDER BY id),
-        'ESTADO_CONSULTA', (SELECT json_agg(json_build_object('id', id, 'nombre', nombre)) FROM ESTADO_CONSULTA ORDER BY id)
+        'TIPO_SANGRE', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, tipo as nombre FROM TIPO_SANGRE ORDER BY id) t),
+        'OCUPACION', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM OCUPACION ORDER BY id) t),
+        'ESTADO_CIVIL', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM ESTADO_CIVIL ORDER BY id) t),
+        'ESPECIALIDAD', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM ESPECIALIDAD ORDER BY id) t),
+        'ESTADO_CITA', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM ESTADO_CITA ORDER BY id) t),
+        'TIPO_CITA', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM TIPO_CITA ORDER BY id) t),
+        'ESTADO_CONSULTA', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM ESTADO_CONSULTA ORDER BY id) t),
+        'MEDICO', (SELECT json_agg(row_to_json(t)) FROM (SELECT id, nombre FROM MEDICO ORDER BY id) t)
     ) INTO result;
     
     RETURN result;

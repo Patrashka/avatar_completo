@@ -1,5 +1,6 @@
 import pathlib
 import sys
+import logging
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
@@ -40,6 +41,10 @@ load_dotenv()
 app = Flask(__name__)
 apply_cors(app)
 
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 @app.get("/health")
 def health_check():
@@ -63,10 +68,17 @@ def doctor_detail(doctor_id: int):
     if not DB_AVAILABLE:
         return jsonify(_require_db()), 503
 
-    doctor = get_doctor_by_id(doctor_id)
-    if not doctor:
-        return jsonify({"error": "Médico no encontrado"}), 404
-    return jsonify(doctor), 200
+    try:
+        logger.info(f"Obteniendo datos del doctor {doctor_id}")
+        doctor = get_doctor_by_id(doctor_id)
+        if not doctor:
+            logger.warning(f"Doctor {doctor_id} no encontrado")
+            return jsonify({"error": "Médico no encontrado"}), 404
+        logger.info(f"Doctor {doctor_id} obtenido correctamente")
+        return jsonify(doctor), 200
+    except Exception as e:
+        logger.error(f"Error al obtener doctor {doctor_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 @app.get("/api/db/doctor/<int:doctor_id>/patient")
@@ -74,10 +86,15 @@ def doctor_primary_patient(doctor_id: int):
     if not DB_AVAILABLE:
         return jsonify(_require_db()), 503
 
-    patient = get_doctor_patient(doctor_id)
-    if not patient:
-        return jsonify({"error": "No hay paciente asignado a este médico"}), 404
-    return jsonify(patient), 200
+    try:
+        logger.info(f"Obteniendo paciente principal del doctor {doctor_id}")
+        patient = get_doctor_patient(doctor_id)
+        if not patient:
+            return jsonify({"error": "No hay paciente asignado a este médico"}), 404
+        return jsonify(patient), 200
+    except Exception as e:
+        logger.error(f"Error al obtener paciente principal del doctor {doctor_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 @app.get("/api/db/doctor/<int:doctor_id>/patients")
@@ -85,8 +102,14 @@ def doctor_patients(doctor_id: int):
     if not DB_AVAILABLE:
         return jsonify(_require_db()), 503
 
-    patients: List[Dict[str, Any]] = get_doctor_patients(doctor_id) or []
-    return jsonify(patients), 200
+    try:
+        logger.info(f"Obteniendo pacientes del doctor {doctor_id}")
+        patients: List[Dict[str, Any]] = get_doctor_patients(doctor_id) or []
+        logger.info(f"Se encontraron {len(patients)} pacientes para el doctor {doctor_id}")
+        return jsonify(patients), 200
+    except Exception as e:
+        logger.error(f"Error al obtener pacientes del doctor {doctor_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 @app.get("/api/db/doctor/<int:doctor_id>/patients/search")
@@ -94,15 +117,19 @@ def doctor_patients_search(doctor_id: int):
     if not DB_AVAILABLE:
         return jsonify(_require_db()), 503
 
-    raw_query = request.args.get("query") or request.args.get("q") or ""
-    search_term = (raw_query or "").strip()
-    limit = request.args.get("limit", default=10, type=int) or 10
+    try:
+        raw_query = request.args.get("query") or request.args.get("q") or ""
+        search_term = (raw_query or "").strip()
+        limit = request.args.get("limit", default=10, type=int) or 10
 
-    if not search_term or len(search_term) < 2:
-        return jsonify([]), 200
+        if not search_term or len(search_term) < 2:
+            return jsonify([]), 200
 
-    matches = search_doctor_patients(doctor_id, search_term, limit)
-    return jsonify(matches or []), 200
+        matches = search_doctor_patients(doctor_id, search_term, limit)
+        return jsonify(matches or []), 200
+    except Exception as e:
+        logger.error(f"Error al buscar pacientes del doctor {doctor_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 @app.post("/api/db/doctor/<int:doctor_id>/assign-patient")
@@ -110,17 +137,21 @@ def doctor_assign_patient(doctor_id: int):
     if not DB_AVAILABLE:
         return jsonify(_require_db()), 503
 
-    payload = request.get_json() or {}
-    username = (payload.get("username") or "").strip()
+    try:
+        payload = request.get_json() or {}
+        username = (payload.get("username") or "").strip()
 
-    if not username:
-        return jsonify({"error": "Se requiere el username del paciente"}), 400
+        if not username:
+            return jsonify({"error": "Se requiere el username del paciente"}), 400
 
-    patient = assign_patient_to_doctor(doctor_id, username)
-    if not patient:
-        return jsonify({"error": "Paciente no encontrado"}), 404
+        patient = assign_patient_to_doctor(doctor_id, username)
+        if not patient:
+            return jsonify({"error": "Paciente no encontrado"}), 404
 
-    return jsonify({"success": True, "patient": patient}), 200
+        return jsonify({"success": True, "patient": patient}), 200
+    except Exception as e:
+        logger.error(f"Error al asignar paciente al doctor {doctor_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 @app.delete("/api/db/doctor/<int:doctor_id>/patients/<int:patient_id>")
@@ -128,11 +159,15 @@ def doctor_unassign_patient(doctor_id: int, patient_id: int):
     if not DB_AVAILABLE:
         return jsonify(_require_db()), 503
 
-    patient = unassign_patient_from_doctor(doctor_id, patient_id)
-    if not patient:
-        return jsonify({"error": "Paciente no encontrado o no vinculado"}), 404
+    try:
+        patient = unassign_patient_from_doctor(doctor_id, patient_id)
+        if not patient:
+            return jsonify({"error": "Paciente no encontrado o no vinculado"}), 404
 
-    return jsonify({"success": True, "patient": patient}), 200
+        return jsonify({"success": True, "patient": patient}), 200
+    except Exception as e:
+        logger.error(f"Error al desasignar paciente {patient_id} del doctor {doctor_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
