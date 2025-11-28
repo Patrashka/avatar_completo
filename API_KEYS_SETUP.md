@@ -27,6 +27,24 @@ La API key viene en formato `email:api_key` (codificado en base64)
 VITE_DID_API_KEY=dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb
 ```
 
+**Configurar imagen personalizada del avatar (OPCIONAL):**
+- **Variable:** `VITE_DID_AVATAR_IMAGE_URL`
+- **Opciones:**
+  1. **URL pública:** Usa una URL de una imagen accesible desde internet
+  2. **Imagen en D-ID:** Sube tu imagen a https://studio.d-id.com/ y copia la URL
+  3. **Dejar vacío:** Usa la imagen predeterminada
+
+**Ejemplo:**
+```env
+VITE_DID_AVATAR_IMAGE_URL=https://ejemplo.com/mi-foto.jpg
+```
+
+**Requisitos de la imagen:**
+- Formato: JPG, PNG, WebP
+- Tamaño recomendado: 512x512px o mayor (cuadrada funciona mejor)
+- Debe ser una URL pública accesible desde internet
+- La imagen debe mostrar claramente el rostro de frente
+
 ---
 
 ### 2. **OpenAI API Key** (OBLIGATORIO para el backend de IA)

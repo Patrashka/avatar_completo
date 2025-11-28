@@ -1,12 +1,11 @@
 {
-    "jwt_service":  18572,
-    "redis_service":  9616,
-    "ai_service":  18308,
-    "backend":  10964,
-    "doctor_service":  9448,
-    "cms_frontend":  13388,
-    "patient_service":  3656,
-    "cms_backend":  17628,
-    "auth_service":  25268,
-    "frontend":  14620
+    "jwt_service":  21508,
+    "redis_service":  3968,
+    "ai_service":  27460,
+    "doctor_service":  14628,
+    "cms_frontend":  15892,
+    "patient_service":  24516,
+    "cms_backend":  26412,
+    "auth_service":  26860,
+    "frontend":  20584
 }

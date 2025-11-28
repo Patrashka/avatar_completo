@@ -231,6 +231,9 @@ export default function PatientView() {
   const DID_API_KEY = import.meta.env.VITE_DID_API_KEY || "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb";
   const DID_API_URL = import.meta.env.VITE_DID_API_URL || "https://api.d-id.com";
   const DID_API_SERVICE = import.meta.env.VITE_DID_API_SERVICE || "talks";
+  const OPENAI_API_KEY_ENV = import.meta.env.VITE_OPENAI_API_KEY;
+  // URL de la imagen del avatar (puede ser una URL pública o una imagen subida a D-ID)
+  const AVATAR_IMAGE_URL = import.meta.env.VITE_DID_AVATAR_IMAGE_URL || "https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg";
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -625,8 +628,8 @@ INSTRUCCIONES CRÍTICAS:
             type: "microsoft",
             voice_id: "es-MX-DaliaNeural"
           },
-          thumbnail: "https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg",
-          source_url: "https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg"
+          thumbnail: AVATAR_IMAGE_URL,
+          source_url: AVATAR_IMAGE_URL
         },
         llm: OPENAI_API_KEY_ENV ? {
           // Si tenemos OpenAI API key, usar provider custom con configuración
@@ -734,7 +737,7 @@ INSTRUCCIONES CRÍTICAS:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          source_url: 'https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg'
+          source_url: AVATAR_IMAGE_URL
         })
       });
 
