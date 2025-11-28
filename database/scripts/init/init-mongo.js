@@ -146,6 +146,37 @@ db.createCollection("interaccion_ia", {
   }
 });
 
+// Colección para conversaciones de D-ID Agents
+db.createCollection("did_conversations", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["agentId", "chatId", "messages", "createdAt", "updatedAt"],
+      properties: {
+        agentId: { bsonType: "string", description: "ID del agente D-ID" },
+        chatId: { bsonType: "string", description: "ID del chat D-ID" },
+        userId: { bsonType: ["int", "null"], description: "ID del usuario del sistema" },
+        patientId: { bsonType: ["int", "null"], description: "ID del paciente" },
+        messages: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            required: ["role", "content", "timestamp"],
+            properties: {
+              role: { bsonType: "string", enum: ["user", "assistant"] },
+              content: { bsonType: "string" },
+              audio: { bsonType: ["string", "null"], description: "Audio en base64 (opcional)" },
+              timestamp: { bsonType: "date" }
+            }
+          }
+        },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  }
+});
+
 // Crear índices para mejorar el rendimiento
 db.sesion_avatar.createIndex({ "usuario_id": 1, "fecha_inicio": -1 });
 db.sesion_avatar.createIndex({ "paciente_id": 1 });
@@ -153,6 +184,9 @@ db.turno_conversacion.createIndex({ "id_sesion": 1, "fecha": -1 });
 db.interaccion_ia.createIndex({ "tipo": 1, "fecha": -1 });
 db.interaccion_ia.createIndex({ "paciente_id": 1, "fecha": -1 });
 db.consulta_doc.createIndex({ "consulta_id": 1 });
+db.did_conversations.createIndex({ "agentId": 1, "chatId": 1 }, { unique: true });
+db.did_conversations.createIndex({ "userId": 1, "updatedAt": -1 });
+db.did_conversations.createIndex({ "patientId": 1, "updatedAt": -1 });
 
 print("✅ MongoDB inicializado correctamente");
 

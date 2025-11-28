@@ -1,5 +1,8 @@
 # Entornos / secretos
 .env
+.env.local
+.env.*.local
+*.env
 
 # Python
 venv/
@@ -7,12 +10,53 @@ venv/
 */venv/
 */.venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
 
 # Node / frontend
 node_modules/
 dist/
 .build/
+.npm
+.eslintcache
+*.log
 
-# Otros
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*.old
+*.orig

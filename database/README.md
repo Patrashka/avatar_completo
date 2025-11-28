@@ -25,11 +25,8 @@ database/
 │   ├── test_services_health.py
 │   └── verificar_bd.py
 ├── docs/                      # Documentación
-│   ├── README.md (este archivo)
-│   ├── DATABASE_SHARED_CONFIG.md
-│   ├── VERIFICATION_REPORT.md
-│   ├── MIGRATION_TO_SP_SUFFIX.md
-│   └── VERIFICACION_BD.md
+│   ├── README.md
+│   └── FIXES_DOCTOR_PATIENT.md
 └── utils/                     # Utilidades
     ├── show_credentials.py
     ├── verify_all_services.ps1
@@ -174,9 +171,7 @@ python tests/test_connections.py
 
 ## 📚 Documentación Adicional
 
-- `docs/DATABASE_SHARED_CONFIG.md` - Configuración compartida entre proyectos
-- `docs/VERIFICATION_REPORT.md` - Reporte de verificación
-- `docs/MIGRATION_TO_SP_SUFFIX.md` - Guía de migración de stored procedures
+- `docs/FIXES_DOCTOR_PATIENT.md` - Correcciones aplicadas a stored procedures
 
 ## 🔄 Migraciones
 

@@ -227,40 +227,40 @@ export default function PatientView() {
   });
   const [savingGeneral, setSavingGeneral] = useState(false);
 
+  // D-ID Agents API Configuration
+  const DID_API_KEY = import.meta.env.VITE_DID_API_KEY || "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb";
+  const DID_API_URL = import.meta.env.VITE_DID_API_URL || "https://api.d-id.com";
+  const DID_API_SERVICE = import.meta.env.VITE_DID_API_SERVICE || "talks";
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const streamIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const didIframeRef = useRef<HTMLIFrameElement>(null);
-  const iframeReadyRef = useRef(false);
-  const partialTranscriptsRef = useRef<Record<string, string>>({});
-  const conversationSessionUuidRef = useRef<string>(generateSessionUuid());
+  const sessionClientAnswerRef = useRef<RTCSessionDescriptionInit | null>(null);
+  const agentIdRef = useRef<string>("");
+  const chatIdRef = useRef<string>("");
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const partialResponseRef = useRef<string>("");
+  const currentResponseRef = useRef<string>("");
+  const statsIntervalIdRef = useRef<number | null>(null);
+  const videoIsPlayingRef = useRef<boolean>(false);
+  const lastBytesReceivedRef = useRef<number>(0);
+  const iceCandidatesQueueRef = useRef<Array<{candidate: string; sdpMid: string | null; sdpMLineIndex: number | null}>>([]);
+  const isProcessingIceCandidatesRef = useRef<boolean>(false);
+  const streamAssignedRef = useRef<boolean>(false);
+  const welcomeMessageSentRef = useRef<boolean>(false);
   const [previewFile, setPreviewFile] = useState<Archivo | null>(null);
 
 
   const DEFAULT_API = import.meta.env.VITE_API || "http://localhost:8080";
   const AI_API = import.meta.env.VITE_AI_API || DEFAULT_API;
   const AUTH_API = import.meta.env.VITE_AUTH_API || DEFAULT_API;
-  const DID_IFRAME_SRC = import.meta.env.VITE_DID_IFRAME_SRC || DID_DEFAULT_IFRAME_SRC;
-  const CUSTOM_DID_ORIGIN = import.meta.env.VITE_DID_ALLOWED_ORIGIN?.trim();
-  const didIframeOrigin = useMemo(() => {
-    try {
-      return new URL(DID_IFRAME_SRC).origin;
-    } catch {
-      return DID_DEFAULT_ORIGIN;
-    }
-  }, [DID_IFRAME_SRC]);
-  const allowedDidOrigins = useMemo(() => {
-    const base = new Set<string>([DID_DEFAULT_ORIGIN]);
-    if (didIframeOrigin) base.add(didIframeOrigin);
-    if (CUSTOM_DID_ORIGIN) base.add(CUSTOM_DID_ORIGIN);
-    return Array.from(base);
-  }, [CUSTOM_DID_ORIGIN, didIframeOrigin]);
+  // El endpoint de conversaciones está en el backend principal (puerto 8080), no en ai_service
   const conversationEndpoint = useMemo(
-    () => `${AI_API}/api/did/conversations`,
-    [AI_API]
+    () => `${DEFAULT_API}/api/did/conversations`,
+    [DEFAULT_API]
   );
 
   // Cargar datos desde la BD al montar el componente
@@ -467,243 +467,639 @@ export default function PatientView() {
     }
   }, [conversationEndpoint]);
 
-  const handleDidConversationEvent = useCallback((eventType: string, data: Record<string, any>) => {
-    if (!DID_EVENT_TYPES.has(eventType)) {
-      return;
-    }
-    const payload = data?.message ?? data?.payload ?? data;
-    const messageId =
-      payload?.id ??
-      data?.messageId ??
-      data?.responseId ??
-      data?.eventId ??
-      `msg-${Date.now()}`;
-    const textChunk = (payload?.text ?? data?.text ?? "").trim();
-    const rawIsFinal = payload?.isFinal ?? payload?.is_final ?? data?.isFinal ?? data?.is_final;
-    const isFinal = typeof rawIsFinal === "boolean" ? rawIsFinal : true;
 
-    if (!isFinal) {
-      if (textChunk) {
-        partialTranscriptsRef.current[messageId] = `${partialTranscriptsRef.current[messageId] || ""}${textChunk} `;
-      }
-      return;
-    }
-
-    const bufferedText = partialTranscriptsRef.current[messageId] || "";
-    delete partialTranscriptsRef.current[messageId];
-    const finalText = (bufferedText + (textChunk || "")).trim();
-    const audioUrl =
-      payload?.audioUrl ??
-      payload?.audio?.url ??
-      data?.audioUrl ??
-      data?.audio?.url ??
-      null;
-    const agentSessionId =
-      data?.session_id ?? data?.sessionId ?? data?.session?.id ?? payload?.sessionId ?? null;
-    const agentConversationId =
-      data?.conversation_id ??
-      data?.conversationId ??
-      data?.conversation?.id ??
-      payload?.conversation_id ??
-      null;
-    const timestamps = payload?.timestamps ?? data?.timestamps ?? {};
-    const startedAt = toIsoString(timestamps.start) || new Date().toISOString();
-    const finishedAt = toIsoString(timestamps.end) || startedAt;
-    const role: ConversationRole =
-      eventType === "conversation.transcription" ? "user" : "agent";
-
-    if (!finalText && !audioUrl) {
-      return;
-    }
-
-    void persistConversationTurn({
-      role,
-      text: finalText,
-      audioUrl,
-      messageId,
-      agentSessionId,
-      agentConversationId,
-      patientId,
-      consultaId,
-      usuarioId,
-      sessionUuid: conversationSessionUuidRef.current,
-      agentUrl: DID_IFRAME_SRC,
-      agentOrigin: didIframeOrigin,
-      startedAt,
-      finishedAt,
-      metadata: {
-        eventType,
-        source: "did-iframe",
-        iframeOrigin: didIframeOrigin,
-      },
-    });
-  }, [consultaId, didIframeOrigin, patientId, persistConversationTurn, usuarioId, DID_IFRAME_SRC]);
-
-  const isAllowedDidOrigin = useCallback((origin: string) => {
-    if (!origin) return false;
-    if (allowedDidOrigins.includes(origin)) {
-      return true;
-    }
+  // Función para guardar mensajes en MongoDB
+  const saveMessageToDB = useCallback(async (role: "user" | "assistant", content: string, audio: string | null = null) => {
     try {
-      const hostname = new URL(origin).hostname;
-      return hostname.endsWith(".d-id.com");
-    } catch {
-      return false;
-    }
-  }, [allowedDidOrigins]);
-
-  const subscribeToIframeEvents = useCallback(() => {
-    const iframeWindow = didIframeRef.current?.contentWindow;
-    if (!iframeWindow) return;
-    try {
-      iframeWindow.postMessage(
-        {
-          type: "subscribe",
-          events: Array.from(DID_EVENT_TYPES),
-        },
-        didIframeOrigin || "*"
-      );
-    } catch (error) {
-      console.warn("No se pudo suscribir al iframe de D-ID:", error);
-    }
-  }, [didIframeOrigin]);
-
-  const handleIframeLoad = useCallback(() => {
-    iframeReadyRef.current = true;
-    subscribeToIframeEvents();
-  }, [subscribeToIframeEvents]);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (!isAllowedDidOrigin(event.origin)) {
-        return;
-      }
-      const eventType = (event.data?.type || event.data?.event) as string | undefined;
-      if (!eventType || !DID_EVENT_TYPES.has(eventType)) {
-        return;
-      }
-      handleDidConversationEvent(eventType, event.data || {});
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [handleDidConversationEvent, isAllowedDidOrigin]);
-
-  useEffect(() => {
-    if (iframeReadyRef.current) {
-      subscribeToIframeEvents();
-    }
-  }, [subscribeToIframeEvents]);
-
-  // Iniciar avatar médico
-  const startAvatar = async () => {
-    try {
-      setAvatarStatus("connecting");
-      const res = await fetch(`${AI_API}/api/avatar/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await res.json();
-      streamIdRef.current = data.id;
-      sessionIdRef.current = data.session_id;
+      const userId = state.PACIENTE.usuario_id || null;
+      const patientId = state.PACIENTE.id || null;
       
-      // ✅ Guardar sesión de avatar en MongoDB (si está disponible)
+      if (!agentIdRef.current || !chatIdRef.current) {
+        console.warn('⚠️ Cannot save message: agentId or chatId missing', {
+          agentId: agentIdRef.current,
+          chatId: chatIdRef.current
+        });
+        return;
+      }
+
+      if (!content || content.trim() === '') {
+        console.warn('⚠️ Cannot save message: content is empty');
+        return;
+      }
+
+      const payload = {
+        role: role === "user" ? "user" : "agent",
+        text: content.trim(),
+        agentId: agentIdRef.current,
+        chatId: chatIdRef.current,
+        userId: userId,  // Enviar como userId (el backend acepta ambos)
+        usuarioId: userId,  // También enviar como usuarioId para compatibilidad
+        patientId: patientId,
+        timestamp: new Date().toISOString()
+      };
+
+      if (audio) {
+        payload.audioUrl = audio;
+      }
+
+      console.log('💾 Guardando mensaje en DB:', {
+        role,
+        agentId: agentIdRef.current,
+        chatId: chatIdRef.current,
+        userId,
+        patientId,
+        contentLength: content.length
+      });
+
+      // Usar DEFAULT_API (backend principal) en lugar de AI_API para conversaciones
+      // Usar timeout corto para no bloquear la UI
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout (aumentado para no interrumpir mientras escribes)
+      
       try {
-        await fetch(`${AI_API}/api/db/avatar/session`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const response = await fetch(`${DEFAULT_API}/api/did/conversations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let error;
+          try {
+            error = JSON.parse(errorText);
+          } catch {
+            error = { message: errorText };
+          }
+          console.warn('⚠️ Failed to save message to DB (no bloqueante):', {
+            status: response.status,
+            statusText: response.statusText,
+            error
+          });
+        } else {
+          const result = await response.json();
+          console.log('✅ Message saved to DB:', result);
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        // No mostrar error si es timeout o conexión rechazada - es no bloqueante
+        if (fetchError.name === 'AbortError') {
+          console.warn('⚠️ Timeout guardando mensaje (no bloqueante)');
+        } else if (fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('ERR_CONNECTION_REFUSED')) {
+          console.warn('⚠️ Backend no disponible para guardar mensaje (no bloqueante). El avatar seguirá funcionando.');
+        } else {
+          console.warn('⚠️ Error saving message to DB (no bloqueante):', fetchError);
+        }
+      }
+    } catch (error) {
+      // Error no bloqueante - el avatar debe seguir funcionando
+      console.warn('⚠️ Error saving message to DB (no bloqueante):', error);
+    }
+  }, [DEFAULT_API, state.PACIENTE.usuario_id, state.PACIENTE.id]);
+
+  // Crear agente D-ID con knowledge base
+  const createDIDAgent = useCallback(async () => {
+    try {
+      // Verificar que la API key esté configurada
+      if (!DID_API_KEY || DID_API_KEY === "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb") {
+        const errorMsg = "API Key de D-ID no configurada. Por favor, configura VITE_DID_API_KEY en frontend/.env";
+        console.error(errorMsg);
+        toast.error(errorMsg, { id: "agent-creation", duration: 5000 });
+        setAvatarStatus("disconnected");
+        throw new Error(errorMsg);
+      }
+
+      setAvatarStatus("connecting");
+      toast.loading("Creando agente médico...", { id: "agent-creation" });
+
+      const instructions = `Eres un asistente médico virtual profesional. IMPORTANTE: DEBES HABLAR ÚNICAMENTE EN ESPAÑOL. NUNCA respondas en inglés u otro idioma.
+
+INSTRUCCIONES CRÍTICAS:
+- SIEMPRE responde en español (español de México)
+- NUNCA uses inglés, incluso si el usuario te escribe en inglés, responde en español
+- Sé amable, empático y profesional
+- Proporciona información médica general pero siempre recomienda consultar con un médico real para diagnósticos
+- Si te preguntan algo fuera del contexto médico, amablemente redirige la conversación
+- Usa un tono cordial y cercano pero profesional
+- Todas tus respuestas deben estar completamente en español`;
+
+      // 1. Crear knowledge base (opcional, podemos omitirlo si falla)
+      let knowledgeId = null;
+      try {
+        const knowledgeRes = await fetch(`${DID_API_URL}/knowledge`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${DID_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
-            usuario_id: state.PACIENTE.usuario_id,
-            paciente_id: state.PACIENTE.id,
-            stream_id: data.id,
-            session_id: data.session_id,
-            canal: "video",
-            idioma: "es",
+            name: "MedicalKnowledge",
+            description: "Conocimiento médico general para asistente virtual"
+          })
+        });
+        
+        if (!knowledgeRes.ok) {
+          const errorText = await knowledgeRes.text();
+          console.warn("No se pudo crear knowledge base, continuando sin ella:", errorText);
+        } else {
+          const knowledgeData = await knowledgeRes.json();
+          knowledgeId = knowledgeData.id;
+        }
+      } catch (e) {
+        console.warn("Error creando knowledge base, continuando sin ella:", e);
+      }
+
+      // 2. Crear agente
+      // Obtener OpenAI API key del backend (si está disponible) para provider custom
+      const OPENAI_API_KEY_ENV = import.meta.env.VITE_OPENAI_API_KEY;
+      
+      const agentBody: any = {
+        presenter: {
+          type: "talk",
+          voice: {
+            type: "microsoft",
+            voice_id: "es-MX-DaliaNeural"
+          },
+          thumbnail: "https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg",
+          source_url: "https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg"
+        },
+        llm: OPENAI_API_KEY_ENV ? {
+          // Si tenemos OpenAI API key, usar provider custom con configuración
+          type: "openai",
+          provider: "custom",
+          model: "gpt-4o-mini",
+          instructions: instructions,
+          template: "rag-ungrounded",
+          config: {
+            api_key: OPENAI_API_KEY_ENV,
+            base_url: "https://api.openai.com/v1"
+          }
+        } : {
+          // Si no tenemos OpenAI API key, usar modelo nativo de D-ID sin provider custom
+          // Nota: D-ID puede tener modelos nativos, pero si requiere custom, necesitamos la API key
+          type: "openai",
+          model: "gpt-4o-mini",
+          instructions: instructions,
+          template: "rag-ungrounded"
+        },
+        preview_name: "Asistente Médico"
+      };
+
+      // Agregar knowledge solo si se creó exitosamente
+      if (knowledgeId) {
+        agentBody.knowledge = {
+          provider: "pinecone",
+          embedder: {
+            provider: "azure-open-ai",
+            model: "text-large-003"
+          },
+          id: knowledgeId
+        };
+      }
+
+      const agentRes = await fetch(`${DID_API_URL}/agents`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${DID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(agentBody)
+      });
+
+      if (!agentRes.ok) {
+        const errorText = await agentRes.text();
+        throw new Error(`Error de D-ID API: ${agentRes.status} - ${errorText}`);
+      }
+
+      const agentData = await agentRes.json();
+      agentIdRef.current = agentData.id;
+
+      // 3. Crear chat
+      const chatRes = await fetch(`${DID_API_URL}/agents/${agentIdRef.current}/chat`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${DID_API_KEY}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!chatRes.ok) {
+        const errorText = await chatRes.text();
+        throw new Error(`Error creando chat: ${chatRes.status} - ${errorText}`);
+      }
+
+      const chatData = await chatRes.json();
+      chatIdRef.current = chatData.id;
+
+      toast.success("Agente creado exitosamente", { id: "agent-creation" });
+      return { agentId: agentIdRef.current, chatId: chatIdRef.current };
+    } catch (error: any) {
+      console.error("Error creando agente:", error);
+      const errorMessage = error.message || "Error desconocido. Verifica tu API key de D-ID en frontend/.env";
+      toast.error(`Error creando agente: ${errorMessage}`, { id: "agent-creation", duration: 5000 });
+      setAvatarStatus("disconnected");
+      throw error;
+    }
+  }, [DID_API_KEY, DID_API_URL]);
+
+  // Conectar a D-ID stream
+  const connectDIDStream = useCallback(async () => {
+    try {
+      // Verificar API key
+      if (!DID_API_KEY || DID_API_KEY === "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb") {
+        const errorMsg = "API Key de D-ID no configurada. Configura VITE_DID_API_KEY en frontend/.env y reinicia el frontend";
+        console.error(errorMsg);
+        toast.error(errorMsg, { id: "connection", duration: 5000 });
+        setAvatarStatus("disconnected");
+        throw new Error(errorMsg);
+      }
+
+      if (!agentIdRef.current || !chatIdRef.current) {
+        await createDIDAgent();
+      }
+
+      setAvatarStatus("connecting");
+      toast.loading("Conectando con el avatar...", { id: "connection" });
+
+      // Crear stream
+      const streamRes = await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${DID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          source_url: 'https://create-images-results.d-id.com/DefaultPresenters/Emma_f/v1_image.jpeg'
+        })
+      });
+
+      if (!streamRes.ok) {
+        const errorText = await streamRes.text();
+        throw new Error(`Error creando stream: ${streamRes.status} - ${errorText}`);
+      }
+
+      const streamData = await streamRes.json();
+      streamIdRef.current = streamData.id;
+      sessionIdRef.current = streamData.session_id;
+
+      // Crear peer connection
+      const pc = new RTCPeerConnection({ iceServers: streamData.ice_servers || [{ urls: ["stun:stun.l.google.com:19302"] }] });
+      pcRef.current = pc;
+
+      // Event listeners
+      pc.addEventListener('icegatheringstatechange', () => {
+        console.log('ICE gathering state:', pc.iceGatheringState);
+      });
+
+      pc.addEventListener('icecandidate', (event) => {
+        if (event.candidate) {
+          iceCandidatesQueueRef.current.push({
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex
+          });
+          processIceCandidatesQueue();
+        }
+      });
+
+      pc.addEventListener('iceconnectionstatechange', async () => {
+        const state = pc.iceConnectionState;
+        console.log('ICE connection state:', state);
+        
+        if (state === 'connected' || state === 'completed') {
+          setAvatarStatus("connected");
+          if (state === 'connected') {
+            toast.success("Conectado exitosamente", { id: "connection" });
+          }
+          
+          // Si el data channel ya está abierto, intentar enviar mensaje de bienvenida
+          if (dataChannelRef.current && dataChannelRef.current.readyState === 'open' && !welcomeMessageSentRef.current) {
+            setTimeout(async () => {
+              try {
+                if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                  const welcomeMessage = "Hola";
+                  console.log("🚀 Enviando mensaje de bienvenida (ICE connected + data channel open):", welcomeMessage);
+                  welcomeMessageSentRef.current = true;
+                  
+                  // Enviar mensaje a través del data channel
+                  dataChannelRef.current.send(`chat/text:${encodeURIComponent(welcomeMessage)}`);
+                  
+                  // También enviar a través de la API REST como respaldo
+                  try {
+                    await sendMessageToAvatar(welcomeMessage);
+                  } catch (apiError) {
+                    console.warn("Error enviando mensaje por API (no crítico):", apiError);
+                  }
+                  
+                  // Guardar mensaje del usuario en la DB
+                  await saveMessageToDB("user", welcomeMessage);
+                  
+                  // Mostrar mensaje en el chat
+                  const msgHistory = document.getElementById("msgHistory");
+                  if (msgHistory) {
+                    msgHistory.innerHTML += `<p class="user-message">${welcomeMessage}</p>`;
+                    msgHistory.scrollTop = msgHistory.scrollHeight;
+                  }
+                }
+              } catch (error) {
+                console.warn("Error enviando mensaje de bienvenida (no crítico):", error);
+                welcomeMessageSentRef.current = false; // Permitir reintento
+              }
+            }, 200);
+          }
+        } else if (state === 'disconnected') {
+          // Estado 'disconnected' es temporal, no desconectar aún
+          console.warn('⚠️ ICE connection disconnected (temporal, esperando reconexión...)');
+          // No cambiar el estado aquí, esperar a ver si se reconecta
+        } else if (state === 'failed') {
+          console.error('❌ ICE connection failed');
+          setAvatarStatus("disconnected");
+          toast.error("Conexión fallida. Intenta reconectar.", { id: "connection" });
+          destroyConnection();
+        } else if (state === 'closed') {
+          console.log('ℹ️ ICE connection closed');
+          setAvatarStatus("disconnected");
+        }
+      });
+
+      pc.addEventListener('track', (event) => {
+        console.log('Track recibido:', event.track.kind, 'Stream ID:', event.streams[0]?.id);
+        
+        // Solo procesar tracks de video, o el primer stream que llegue
+        if (event.track.kind === 'video' && videoRef.current && event.streams[0] && !streamAssignedRef.current) {
+          console.log('Asignando stream de video:', event.streams[0]);
+          streamAssignedRef.current = true;
+          
+          // Detener cualquier stream anterior
+          if (videoRef.current.srcObject) {
+            const oldStream = videoRef.current.srcObject as MediaStream;
+            oldStream.getTracks().forEach(track => {
+              track.stop();
+              console.log('Track anterior detenido:', track.kind);
+            });
+          }
+          
+          // Asignar nuevo stream
+          videoRef.current.srcObject = event.streams[0];
+          console.log('Stream asignado, tracks:', event.streams[0].getTracks().map(t => t.kind));
+          
+          // Marcar como conectado inmediatamente
+          setAvatarStatus("connected");
+          
+          // El mensaje de bienvenida se enviará cuando el data channel se abra
+          // para asegurar que esté completamente listo
+          
+          // El video debería reproducirse automáticamente con autoplay
+          // Pero intentamos play() por si acaso después de un breve delay
+          setTimeout(() => {
+            if (videoRef.current) {
+              if (videoRef.current.paused) {
+                videoRef.current.play()
+                  .then(() => {
+                    console.log('✅ Video reproduciendo correctamente');
+                  })
+                  .catch((error) => {
+                    console.warn('⚠️ Error en play() (normal con múltiples tracks):', error.name);
+                    // El video puede reproducirse automáticamente de todas formas
+                  });
+              } else {
+                console.log('✅ Video ya está reproduciendo');
+              }
+              
+              // Verificar que el video tenga contenido
+              console.log('Video info:', {
+                srcObject: !!videoRef.current.srcObject,
+                paused: videoRef.current.paused,
+                readyState: videoRef.current.readyState,
+                videoWidth: videoRef.current.videoWidth,
+                videoHeight: videoRef.current.videoHeight
+              });
+            }
+          }, 200);
+        } else if (event.track.kind === 'audio') {
+          console.log('Track de audio recibido (se agregará al mismo stream)');
+          // El audio se agregará automáticamente al mismo stream
+          if (!streamAssignedRef.current) {
+            // Si aún no hay video, esperar un poco
+            setTimeout(() => {
+              if (videoRef.current && videoRef.current.srcObject) {
+                streamAssignedRef.current = true;
+                setAvatarStatus("connected");
+              }
+            }, 500);
+          }
+        } else if (streamAssignedRef.current) {
+          console.log('Stream ya asignado, track adicional:', event.track.kind);
+        }
+      });
+
+      // Set remote description
+      await pc.setRemoteDescription(streamData.offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sessionClientAnswerRef.current = answer;
+
+      // Enviar SDP answer
+      await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}/sdp`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${DID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          answer: answer,
+          session_id: sessionIdRef.current
+        })
+      });
+
+      // Crear data channel
+      const dc = pc.createDataChannel("JanusDataChannel");
+      dataChannelRef.current = dc;
+
+      dc.onopen = async () => {
+        console.log("Data channel abierto");
+        setAvatarStatus("connected");
+        
+        // Enviar mensaje de bienvenida INMEDIATAMENTE cuando el data channel se abre
+        // Esto activa el avatar tan pronto como la conexión esté lista
+        if (!welcomeMessageSentRef.current) {
+          setTimeout(async () => {
+            try {
+              if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                const welcomeMessage = "Hola";
+                console.log("🚀 Enviando mensaje de bienvenida automático (data channel abierto):", welcomeMessage);
+                welcomeMessageSentRef.current = true;
+                
+                // Enviar mensaje a través del data channel
+                dataChannelRef.current.send(`chat/text:${encodeURIComponent(welcomeMessage)}`);
+                
+                // También enviar a través de la API REST como respaldo
+                try {
+                  await sendMessageToAvatar(welcomeMessage);
+                } catch (apiError) {
+                  console.warn("Error enviando mensaje por API (no crítico):", apiError);
+                }
+                
+                // Guardar mensaje del usuario en la DB
+                await saveMessageToDB("user", welcomeMessage);
+                
+                // Mostrar mensaje en el chat
+                const msgHistory = document.getElementById("msgHistory");
+                if (msgHistory) {
+                  msgHistory.innerHTML += `<p class="user-message">${welcomeMessage}</p>`;
+                  msgHistory.scrollTop = msgHistory.scrollHeight;
+                }
+              }
+            } catch (error) {
+              console.warn("Error enviando mensaje de bienvenida (no crítico):", error);
+              welcomeMessageSentRef.current = false; // Permitir reintento
+            }
+          }, 100); // Muy corto delay para enviar inmediatamente
+        }
+      };
+
+      dc.onclose = () => {
+        console.log("⚠️ Data channel cerrado");
+        // No desconectar inmediatamente, puede ser temporal
+        // Solo cambiar estado si realmente está cerrado
+        if (dataChannelRef.current && dataChannelRef.current.readyState === 'closed') {
+          console.log("Data channel realmente cerrado, desconectando...");
+          setAvatarStatus("disconnected");
+        }
+      };
+      
+      dc.onerror = (error) => {
+        console.error("❌ Error en data channel:", error);
+        // No desconectar por errores menores, solo loguear
+      };
+
+      dc.onmessage = async (event) => {
+        const msg = event.data;
+        if (msg.includes("chat/partial:")) {
+          const partial = decodeURIComponent(msg.replace("chat/partial:", ""));
+          partialResponseRef.current += partial;
+        } else if (msg.includes("stream/done")) {
+          if (partialResponseRef.current) {
+            const avatarMessage: ChatMessage = {
+              sender: "avatar",
+              text: partialResponseRef.current,
+              timestamp: new Date(),
+            };
+            setChatMessages((prev) => [...prev, avatarMessage]);
+            await saveMessageToDB("assistant", partialResponseRef.current);
+            currentResponseRef.current = partialResponseRef.current;
+            partialResponseRef.current = '';
+          }
+        }
+      };
+
+    } catch (error: any) {
+      console.error("Error conectando stream:", error);
+      const errorMessage = error.message || "Error desconocido. Verifica tu API key de D-ID";
+      toast.error(`Error conectando: ${errorMessage}`, { id: "connection", duration: 5000 });
+      setAvatarStatus("disconnected");
+    }
+  }, [DID_API_KEY, DID_API_URL, DID_API_SERVICE, createDIDAgent, saveMessageToDB]);
+
+  // Procesar cola de ICE candidates
+  const processIceCandidatesQueue = useCallback(async () => {
+    if (isProcessingIceCandidatesRef.current || iceCandidatesQueueRef.current.length === 0 || !streamIdRef.current) return;
+    
+    isProcessingIceCandidatesRef.current = true;
+    
+    while (iceCandidatesQueueRef.current.length > 0) {
+      const candidate = iceCandidatesQueueRef.current.shift();
+      if (!candidate) break;
+      
+      try {
+        await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}/ice`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${DID_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...candidate,
+            session_id: sessionIdRef.current,
           }),
         });
-      } catch (e) {
-        console.warn("No se pudo guardar sesión de avatar:", e);
+      } catch (error) {
+        console.error('Error enviando ICE candidate:', error);
+        iceCandidatesQueueRef.current.unshift(candidate);
+        break;
       }
-      
-      await initWebRTC(data.id, data.offer);
-    } catch (e) {
-      console.error(e);
-      setAvatarStatus("disconnected");
-      toast.error("Error al conectar con el avatar médico");
     }
-  };
+    
+    isProcessingIceCandidatesRef.current = false;
+  }, [DID_API_KEY, DID_API_URL, DID_API_SERVICE]);
 
-  const initWebRTC = async (id: string, remoteOffer: RTCSessionDescriptionInit) => {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
-    });
-    pcRef.current = pc;
-
-    pc.addTransceiver("video", { direction: "recvonly" });
-    pc.addTransceiver("audio", { direction: "recvonly" });
-
-    pc.ontrack = (event) => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = event.streams[0];
-      }
-      setAvatarStatus("connected");
-      greetAvatar();
-    };
-
-    await pc.setRemoteDescription(remoteOffer);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    await fetch(`${AI_API}/api/avatar/sdp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        stream_id: id,
-        answer,
-        session_id: sessionIdRef.current,
-      }),
-    });
-  };
-
-  const greetAvatar = async () => {
-    setIsSpeaking(true);
+  // Destruir conexión
+  const destroyConnection = useCallback(async () => {
     try {
-      const res = await fetch(`${AI_API}/api/ai/avatar-response`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: "Hola",
-          stream_id: streamIdRef.current,
-          session_id: sessionIdRef.current,
-        }),
-      });
-      await res.json();
-      setTimeout(() => {
-        setIsSpeaking(false);
-      }, 3000);
-    } catch (err) {
-      console.error("Error saludando al avatar:", err);
-      setIsSpeaking(false);
+      if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+      if (dataChannelRef.current) {
+        dataChannelRef.current.close();
+        dataChannelRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      if (statsIntervalIdRef.current) {
+        clearInterval(statsIntervalIdRef.current);
+        statsIntervalIdRef.current = null;
+      }
+      if (streamIdRef.current && sessionIdRef.current) {
+        await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Basic ${DID_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ session_id: sessionIdRef.current }),
+        });
+      }
+      streamIdRef.current = null;
+      sessionIdRef.current = null;
+      sessionClientAnswerRef.current = null;
+      partialResponseRef.current = '';
+      currentResponseRef.current = '';
+      iceCandidatesQueueRef.current = [];
+      streamAssignedRef.current = false;
+      welcomeMessageSentRef.current = false; // Reset para permitir nuevo mensaje de bienvenida
+      setAvatarStatus("disconnected");
+    } catch (error) {
+      console.error("Error destruyendo conexión:", error);
     }
-  };
+  }, [DID_API_KEY, DID_API_URL, DID_API_SERVICE]);
 
-  const stopAvatar = () => {
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
+  // Iniciar avatar (crear agente y conectar)
+  const startAvatar = useCallback(async () => {
+    try {
+      await connectDIDStream();
+    } catch (error: any) {
+      console.error("Error iniciando avatar:", error);
+      toast.error("Error al iniciar el avatar médico");
+      setAvatarStatus("disconnected");
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setAvatarStatus("disconnected");
-    streamIdRef.current = null;
-    sessionIdRef.current = null;
-  };
+  }, [connectDIDStream]);
 
-  const sendMessage = async () => {
-    if (!chatInput.trim() || isSpeaking || avatarStatus !== "connected") return;
+  // Detener avatar
+  const stopAvatar = useCallback(() => {
+    destroyConnection();
+  }, [destroyConnection]);
+
+  const sendMessage = useCallback(async () => {
+    if (!chatInput.trim() || isSpeaking || avatarStatus !== "connected" || !agentIdRef.current || !chatIdRef.current || !streamIdRef.current) {
+      return;
+    }
 
     const userMessage: ChatMessage = {
       sender: "user",
@@ -711,37 +1107,51 @@ export default function PatientView() {
       timestamp: new Date(),
     };
     setChatMessages((prev) => [...prev, userMessage]);
+    await saveMessageToDB("user", userMessage.text);
+    const messageText = chatInput.trim();
     setChatInput("");
 
     setIsSpeaking(true);
     try {
-      const res = await fetch(`${AI_API}/api/ai/avatar-response`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      // Enviar mensaje a D-ID Agents API
+      const res = await fetch(`${DID_API_URL}/agents/${agentIdRef.current}/chat/${chatIdRef.current}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${DID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          message: userMessage.text,
-          stream_id: streamIdRef.current,
-          session_id: sessionIdRef.current,
-          paciente_id: state.PACIENTE.id,  // ✅ Incluir ID del paciente
-          consulta_id: state.CONSULTA.id,  // ✅ Incluir ID de la consulta
-          usuario_id: state.PACIENTE.usuario_id,  // ✅ Incluir ID del usuario
-        }),
+          streamId: streamIdRef.current,
+          sessionId: sessionIdRef.current,
+          messages: [{
+            role: "user",
+            content: messageText,
+            created_at: new Date().toISOString()
+          }]
+        })
       });
+
       const data = await res.json();
       
-      const avatarMessage: ChatMessage = {
-        sender: "avatar",
-        text: data.ai_response || "He recibido tu mensaje.",
-        timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, avatarMessage]);
-    } catch (err) {
+      // Si está en modo texto solamente (sin créditos)
+      if (res.status === 200 && data.chatMode === 'TextOnly') {
+        const avatarMessage: ChatMessage = {
+          sender: "avatar",
+          text: data.result || "He recibido tu mensaje.",
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, avatarMessage]);
+        await saveMessageToDB("assistant", avatarMessage.text);
+      }
+      // Si está en modo streaming, la respuesta vendrá por el data channel
+      
+    } catch (err: any) {
       console.error("Error enviando mensaje:", err);
-      toast.error("Error al enviar mensaje");
+      toast.error(`Error al enviar mensaje: ${err.message}`);
     } finally {
       setIsSpeaking(false);
     }
-  };
+  }, [chatInput, isSpeaking, avatarStatus, saveMessageToDB, DID_API_KEY, DID_API_URL]);
 
   const toggleRecording = async () => {
     if (isSpeaking || avatarStatus !== "connected") return;
@@ -803,32 +1213,49 @@ export default function PatientView() {
     }
   };
 
-  const sendMessageToAvatar = async (message: string) => {
-    try {
-      const res = await fetch(`${AI_API}/api/ai/avatar-response`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          stream_id: streamIdRef.current,
-          session_id: sessionIdRef.current,
-          paciente_id: state.PACIENTE.id,  // ✅ Incluir ID del paciente
-          consulta_id: state.CONSULTA.id,  // ✅ Incluir ID de la consulta
-          usuario_id: state.PACIENTE.usuario_id,  // ✅ Incluir ID del usuario
-        }),
-      });
-      const data = await res.json();
-
-      const avatarMessage: ChatMessage = {
-        sender: "avatar",
-        text: data.ai_response || "He recibido tu mensaje.",
-        timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, avatarMessage]);
-    } catch (err) {
-      console.error("Error enviando mensaje al avatar:", err);
+  // Función para enviar mensaje al avatar con contexto en español
+  const sendMessageToAvatar = useCallback(async (message: string) => {
+    if (!agentIdRef.current || !chatIdRef.current || !streamIdRef.current) {
+      return;
     }
-  };
+
+    try {
+      const res = await fetch(`${DID_API_URL}/agents/${agentIdRef.current}/chat/${chatIdRef.current}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${DID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          streamId: streamIdRef.current,
+          sessionId: sessionIdRef.current,
+          messages: [{
+            role: "user",
+            content: message,
+            created_at: new Date().toISOString()
+          }]
+        })
+      });
+
+      const data = await res.json();
+      
+      // Si está en modo texto solamente
+      if (res.status === 200 && data.chatMode === 'TextOnly') {
+        const avatarMessage: ChatMessage = {
+          sender: "avatar",
+          text: data.result || "He recibido tu mensaje.",
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, avatarMessage]);
+        await saveMessageToDB("assistant", avatarMessage.text);
+      }
+      // Si está en modo streaming, la respuesta vendrá por el data channel
+      
+    } catch (err: any) {
+      console.error("Error enviando mensaje al avatar:", err);
+      toast.error(`Error: ${err.message}`);
+    }
+  }, [saveMessageToDB, DID_API_KEY, DID_API_URL]);
 
   const syncGeneralFormFromState = () => {
     setGeneralForm({
@@ -1388,18 +1815,226 @@ export default function PatientView() {
           <div className="avatar-panel">
             <h2 className="avatar-panel__title">Avatar Médico en Vivo</h2>
 
-            {/* Área para embed del avatar médico */}
-            <div className="avatar-panel__embed">
-              <iframe
-                ref={didIframeRef}
-                onLoad={handleIframeLoad}
-                src={DID_IFRAME_SRC}
-                title="Avatar Médico"
-                className="avatar-panel__iframe"
-                allow="microphone; camera; autoplay; encrypted-media"
-                allowFullScreen
-              />
+            {/* Controles del avatar */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', justifyContent: 'center' }}>
+              {avatarStatus === "disconnected" ? (
+                <button
+                  onClick={startAvatar}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#04121f',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  Conectar Avatar
+                </button>
+              ) : (
+                <button
+                  onClick={stopAvatar}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'var(--danger)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  Desconectar
+                </button>
+              )}
+              <div style={{
+                padding: '10px 16px',
+                background: avatarStatus === "connected" ? 'var(--success)' : avatarStatus === "connecting" ? 'orange' : 'var(--muted)',
+                borderRadius: '8px',
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: 'white',
+                  display: 'inline-block',
+                  animation: avatarStatus === "connecting" ? 'pulse 2s infinite' : 'none'
+                }}></span>
+                {avatarStatus === "connected" ? "Conectado" : avatarStatus === "connecting" ? "Conectando..." : "Desconectado"}
+              </div>
             </div>
+
+            {/* Área para el video del avatar */}
+            <div className="avatar-panel__embed" style={{ position: 'relative' }}>
+              <video
+                ref={videoRef}
+                className="avatar-panel__video"
+                autoPlay
+                playsInline
+                muted={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  minHeight: '600px',
+                  objectFit: 'cover',
+                  borderRadius: '12px',
+                  background: 'rgba(0,0,0,0.3)',
+                  display: 'block', // Siempre visible cuando hay stream
+                  zIndex: 2,
+                  opacity: avatarStatus === "connected" ? 1 : 0.3
+                }}
+                onLoadedMetadata={() => {
+                  console.log('✅ Video metadata cargado, dimensiones:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+                  if (videoRef.current) {
+                    videoRef.current.play().catch(console.warn);
+                  }
+                }}
+                onCanPlay={() => {
+                  console.log('✅ Video puede reproducirse');
+                  if (videoRef.current) {
+                    videoRef.current.play().catch(console.warn);
+                  }
+                }}
+                onPlay={() => {
+                  console.log('✅ Video empezó a reproducirse');
+                }}
+                onError={(e) => {
+                  console.error('❌ Error en el video:', e);
+                }}
+              />
+              {avatarStatus === "disconnected" && !videoRef.current?.srcObject && (
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  textAlign: 'center',
+                  color: 'var(--muted)',
+                  zIndex: 1,
+                  pointerEvents: 'none'
+                }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>👨‍⚕️</div>
+                  <div>Presiona "Conectar Avatar" para iniciar</div>
+                </div>
+              )}
+              {avatarStatus === "connecting" && !videoRef.current?.srcObject && (
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  textAlign: 'center',
+                  color: 'var(--muted)',
+                  zIndex: 1,
+                  pointerEvents: 'none'
+                }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏳</div>
+                  <div>Conectando...</div>
+                </div>
+              )}
+              {avatarStatus === "connected" && videoRef.current?.srcObject && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '10px',
+                  right: '10px',
+                  background: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  zIndex: 3,
+                  pointerEvents: 'none'
+                }}>
+                  Stream activo
+                </div>
+              )}
+            </div>
+
+            {/* Historial de chat */}
+            {avatarStatus === "connected" && (
+              <div style={{
+                marginTop: '16px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '12px',
+                padding: '16px',
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'var(--txt)' }}>Conversación</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {chatMessages.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        background: msg.sender === "user" ? 'rgba(82, 229, 255, 0.1)' : 'rgba(138, 125, 255, 0.1)',
+                        alignSelf: msg.sender === "user" ? 'flex-end' : 'flex-start',
+                        maxWidth: '80%',
+                        fontSize: '13px',
+                        color: 'var(--txt)'
+                      }}
+                    >
+                      {msg.text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Input de mensaje */}
+            {avatarStatus === "connected" && (
+              <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Escribe tu mensaje..."
+                  disabled={isSpeaking}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '8px',
+                    color: 'var(--txt)',
+                    fontSize: '14px'
+                  }}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={!chatInput.trim() || isSpeaking}
+                  style={{
+                    padding: '10px 20px',
+                    background: isSpeaking || !chatInput.trim() ? 'var(--muted)' : 'var(--primary)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: isSpeaking || !chatInput.trim() ? 'var(--txt)' : '#04121f',
+                    fontWeight: 600,
+                    cursor: isSpeaking || !chatInput.trim() ? 'not-allowed' : 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  {isSpeaking ? "..." : "Enviar"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
         {previewFile && (
@@ -1896,13 +2531,16 @@ export default function PatientView() {
           position: relative;
         }
 
-        .avatar-panel__iframe {
-          width: 100%;
-          height: 100%;
-          min-height: 600px;
+        .avatar-panel__video {
+          width: 100% !important;
+          height: 100% !important;
+          min-height: 600px !important;
           border: none;
-          display: block;
-          background: transparent;
+          display: block !important;
+          background: rgba(0,0,0,0.3);
+          border-radius: 12px;
+          position: relative;
+          z-index: 2;
         }
 
         @media (max-width: 1200px) {

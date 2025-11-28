@@ -8,10 +8,31 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
+from pathlib import Path
+import os
 
-load_dotenv()
+# Cargar .env desde el directorio del backend
+backend_dir = Path(__file__).parent
+env_path = backend_dir / '.env'
 
-import google.generativeai as genai
+print(f"🔍 Buscando .env en: {env_path}")
+print(f"📁 Archivo existe: {env_path.exists()}")
+
+if env_path.exists():
+    print(f"📄 Leyendo archivo .env directamente...")
+    with open(env_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
+                print(f"   ✅ {key.strip()} = {value.strip()[:20]}...")
+
+# También intentar con load_dotenv por si acaso
+load_dotenv(dotenv_path=env_path, override=True)
+
+from openai import OpenAI
 
 app = Flask(__name__)
 CORS(app)
@@ -31,20 +52,69 @@ _mongo_db = None
 def _build_mongo_uri() -> str:
     if MONGO_URI:
         return MONGO_URI
-    auth_part = ""
+    # Usar admin por defecto si no hay credenciales específicas
     if MONGO_USER and MONGO_PASSWORD:
         auth_part = f"{MONGO_USER}:{MONGO_PASSWORD}@"
+    else:
+        # Fallback a admin si no hay credenciales configuradas
+        auth_part = "admin:admin123@"
     return f"mongodb://{auth_part}{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}?authSource=admin"
 
 
 def get_mongo_collection(name: str):
     global _mongo_client, _mongo_db
     if _mongo_client is None:
-        uri = _build_mongo_uri()
-        _mongo_client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        # Intentar primero con admin (más confiable, tiene todos los permisos)
+        admin_uri = f"mongodb://admin:admin123@{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}?authSource=admin"
+        print(f"🔌 Conectando a MongoDB: {MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}")
+        try:
+            print(f"   Intentando con usuario admin...")
+            _mongo_client = MongoClient(admin_uri, serverSelectionTimeoutMS=5000)
+            # Verificar conexión y autenticación
+            _mongo_client.admin.command('ping')
+            print("✅ Conexión a MongoDB exitosa (con admin)")
+        except Exception as e:
+            print(f"❌ Error con admin: {e}")
+            # Intentar con credenciales personalizadas si existen
+            try:
+                uri = _build_mongo_uri()
+                print(f"⚠️  Intentando con credenciales personalizadas...")
+                _mongo_client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+                _mongo_client.admin.command('ping')
+                print("✅ Conexión a MongoDB exitosa (con credenciales personalizadas)")
+            except Exception as e2:
+                print(f"❌ Error con credenciales personalizadas: {e2}")
+                raise PyMongoError(f"No se pudo conectar a MongoDB: {e2}")
+    
+    # Verificar que la conexión sigue activa y autenticada
+    try:
+        _mongo_client.admin.command('ping')
+    except Exception as e:
+        print(f"⚠️  Conexión MongoDB perdida, reconectando...")
+        _mongo_client = None
+        _mongo_db = None
+        # Reintentar conexión
+        return get_mongo_collection(name)
+    
     if _mongo_db is None:
         _mongo_db = _mongo_client[MONGO_DB_NAME]
-    return _mongo_db[name]
+    
+    # Verificar autenticación intentando acceder a la colección
+    try:
+        collection = _mongo_db[name]
+        # Hacer una operación de prueba para verificar permisos
+        collection.find_one({}, limit=1)
+        return collection
+    except Exception as e:
+        error_str = str(e).lower()
+        print(f"❌ Error accediendo a colección {name}: {e}")
+        # Si falla por autenticación, intentar reconectar con admin
+        if "authentication" in error_str or "unauthorized" in error_str or "requires authentication" in error_str:
+            print(f"⚠️  Error de autenticación detectado, reconectando con admin...")
+            _mongo_client = None
+            _mongo_db = None
+            return get_mongo_collection(name)  # Reintentar
+        raise PyMongoError(f"Error accediendo a colección {name}: {e}")
 
 
 def _safe_int(value: Any):
@@ -61,13 +131,23 @@ def _safe_int(value: Any):
     except (ValueError, TypeError):
         return None
 
-# ===== GEMINI =====
-GEMINI_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
-if not GEMINI_KEY:
-    raise RuntimeError("Falta GOOGLE_GEMINI_API_KEY en .env")
+# ===== OpenAI =====
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-genai.configure(api_key=GEMINI_KEY)
-gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+print(f"🔑 OPENAI_API_KEY encontrada: {bool(OPENAI_API_KEY)}")
+if OPENAI_API_KEY:
+    print(f"   Longitud: {len(OPENAI_API_KEY)} caracteres")
+    print(f"   Empieza con: {OPENAI_API_KEY[:10]}...")
+
+if not OPENAI_API_KEY:
+    print(f"❌ ERROR: No se encontró OPENAI_API_KEY")
+    print(f"📋 Variables de entorno disponibles:")
+    for key in sorted(os.environ.keys()):
+        if 'OPENAI' in key or 'API' in key:
+            print(f"   {key} = {os.environ[key][:20]}...")
+    raise RuntimeError("Falta OPENAI_API_KEY en .env")
+
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ===== XML UTILITIES =====
 def parse_xml_request():
@@ -104,9 +184,26 @@ def is_mobile_client():
     user_agent = request.headers.get('User-Agent', '').lower()
     return 'mobile' in user_agent or 'android' in user_agent or 'ios' in user_agent
 
+# ===== Health Check =====
+@app.get("/health")
+def health():
+    """Health check endpoint"""
+    try:
+        # Verificar MongoDB
+        collection = get_mongo_collection("did_conversations")
+        collection.find_one({})  # Test query
+        return jsonify({"status": "healthy", "mongodb": "connected"}), 200
+    except Exception as e:
+        return jsonify({"status": "degraded", "mongodb": "disconnected", "error": str(e)}), 200
+
 # ===== D-ID Conversations =====
 @app.post("/api/did/conversations")
 def save_did_conversation():
+    """
+    Guarda un mensaje en la conversación D-ID.
+    Agrupa mensajes por agentId/chatId (mapeados desde agentSessionId/agentConversationId).
+    Compatible con el formato del conversation-service.js
+    """
     data: Dict[str, Any] = request.get_json(silent=True) or {}
     role = data.get("role")
     if role not in {"user", "agent"}:
@@ -117,38 +214,126 @@ def save_did_conversation():
     if not text and not audio_url:
         return jsonify({"error": "Debe incluir 'text' o 'audioUrl'."}), 400
 
-    doc: Dict[str, Any] = {
-        "role": role,
-        "text": text,
-        "audio_url": audio_url,
-        "patient_id": _safe_int(data.get("patientId")),
-        "consulta_id": _safe_int(data.get("consultaId")),
-        "usuario_id": _safe_int(data.get("usuarioId")),
-        "agent_session_id": data.get("agentSessionId"),
-        "agent_conversation_id": data.get("agentConversationId"),
-        "message_id": data.get("messageId"),
-        "session_uuid": data.get("sessionUuid"),
-        "agent_url": data.get("agentUrl"),
-        "agent_origin": data.get("agentOrigin"),
-        "started_at": data.get("startedAt"),
-        "finished_at": data.get("finishedAt"),
-        "metadata": data.get("metadata") or {},
-        "created_at": datetime.utcnow(),
-    }
-
-    doc = {k: v for k, v in doc.items() if v not in (None, "")}
-
+    # Mapear agentSessionId/agentConversationId a agentId/chatId para compatibilidad
+    agent_id = data.get("agentId") or data.get("agentSessionId") or data.get("agent_session_id")
+    chat_id = data.get("chatId") or data.get("agentConversationId") or data.get("agent_conversation_id")
+    
+    if not agent_id or not chat_id:
+        return jsonify({"error": "agentId/chatId o agentSessionId/agentConversationId requeridos"}), 400
+    
+    patient_id = _safe_int(data.get("patientId"))
+    # Aceptar tanto "usuarioId" como "userId" para compatibilidad
+    usuario_id = _safe_int(data.get("usuarioId")) or _safe_int(data.get("userId"))
+    
+    # Timestamp del mensaje
+    timestamp_str = data.get("startedAt") or data.get("finishedAt") or data.get("timestamp")
+    if timestamp_str:
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        except:
+            timestamp = datetime.utcnow()
+    else:
+        timestamp = datetime.utcnow()
+    
     try:
-        collection = get_mongo_collection("did_conversations")
-        result = collection.insert_one(doc)
+        # Intentar obtener la colección con mejor manejo de errores
+        try:
+            collection = get_mongo_collection("did_conversations")
+        except Exception as mongo_error:
+            print(f"❌ Error obteniendo colección MongoDB: {mongo_error}")
+            return jsonify({"error": f"MongoDB no disponible: {str(mongo_error)}"}), 503
+        
+        # Log para depuración
+        print(f"💾 Guardando mensaje D-ID: role={role}, agentId={agent_id}, chatId={chat_id}, userId={usuario_id}, patientId={patient_id}, text={text[:50]}...")
+        
+        # Buscar o crear la conversación
+        try:
+            conversation = collection.find_one({
+                "agentId": agent_id,
+                "chatId": chat_id
+            })
+        except Exception as find_error:
+            print(f"❌ Error buscando conversación en MongoDB: {find_error}")
+            return jsonify({"error": f"Error consultando MongoDB: {str(find_error)}"}), 503
+        
+        # Crear el mensaje
+        message = {
+            "role": role,
+            "content": text,
+            "timestamp": timestamp,
+        }
+        if audio_url:
+            message["audio"] = audio_url
+        
+        if not conversation:
+            # Crear nueva conversación
+            conversation_doc = {
+                "agentId": agent_id,
+                "chatId": chat_id,
+                "userId": usuario_id,
+                "patientId": patient_id,
+                "messages": [message],
+                "createdAt": datetime.utcnow(),
+                "updatedAt": datetime.utcnow(),
+                # Campos adicionales para compatibilidad
+                "agent_session_id": data.get("agentSessionId"),
+                "agent_conversation_id": data.get("agentConversationId"),
+                "session_uuid": data.get("sessionUuid"),
+                "agent_url": data.get("agentUrl"),
+                "agent_origin": data.get("agentOrigin"),
+                "consulta_id": _safe_int(data.get("consultaId")),
+                "metadata": data.get("metadata") or {}
+            }
+            try:
+                result = collection.insert_one(conversation_doc)
+                print(f"✅ Nueva conversación creada: {result.inserted_id}")
+                return jsonify({"id": str(result.inserted_id), "conversationId": str(result.inserted_id)}), 201
+            except Exception as insert_error:
+                print(f"❌ Error insertando conversación en MongoDB: {insert_error}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": f"Error guardando en MongoDB: {str(insert_error)}"}), 503
+        else:
+            # Agregar mensaje a conversación existente
+            try:
+                collection.update_one(
+                    {"_id": conversation["_id"]},
+                    {
+                        "$push": {"messages": message},
+                        "$set": {
+                            "updatedAt": datetime.utcnow(),
+                            **({"userId": usuario_id} if usuario_id else {}),
+                            **({"patientId": patient_id} if patient_id else {})
+                        }
+                    }
+                )
+                print(f"✅ Mensaje agregado a conversación existente: {conversation['_id']}")
+                return jsonify({"id": str(conversation["_id"]), "conversationId": str(conversation["_id"])}), 200
+            except Exception as update_error:
+                print(f"❌ Error actualizando conversación en MongoDB: {update_error}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": f"Error actualizando MongoDB: {str(update_error)}"}), 503
+            
     except PyMongoError as exc:
+        print(f"❌ PyMongoError: {exc}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": f"MongoDB no disponible: {exc}"}), 503
-
-    return jsonify({"id": str(result.inserted_id)}), 201
+    except Exception as exc:
+        print(f"❌ Error inesperado: {exc}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Error interno del servidor: {exc}"}), 500
 
 
 @app.get("/api/did/conversations")
 def list_did_conversations():
+    """
+    Lista conversaciones D-ID.
+    Soporta filtrado por patientId, userId, agentId, chatId.
+    Compatible con el formato del conversation-service.js
+    """
     try:
         collection = get_mongo_collection("did_conversations")
     except PyMongoError as exc:
@@ -161,11 +346,21 @@ def list_did_conversations():
 
     query: Dict[str, Any] = {}
     patient_id = _safe_int(request.args.get("patientId"))
+    user_id = _safe_int(request.args.get("userId"))
+    agent_id = request.args.get("agentId")
+    chat_id = request.args.get("chatId")
     consulta_id = _safe_int(request.args.get("consultaId"))
     session_uuid = request.args.get("sessionUuid")
 
+    # Construir query compatible con ambos formatos
     if patient_id is not None:
-        query["patient_id"] = patient_id
+        query["patientId"] = patient_id
+    if user_id is not None:
+        query["userId"] = user_id
+    if agent_id:
+        query["agentId"] = agent_id
+    if chat_id:
+        query["chatId"] = chat_id
     if consulta_id is not None:
         query["consulta_id"] = consulta_id
     if session_uuid:
@@ -173,14 +368,20 @@ def list_did_conversations():
 
     items = []
     try:
-        cursor = collection.find(query).sort("created_at", 1).limit(limit)
+        # Ordenar por updatedAt (nuevo formato) o created_at (formato antiguo)
+        cursor = collection.find(query).sort("updatedAt", -1).limit(limit)
         for doc in cursor:
             doc["id"] = str(doc.pop("_id"))
+            # Normalizar formato de respuesta
+            if "messages" in doc:
+                doc["messageCount"] = len(doc["messages"])
+                if doc["messages"]:
+                    doc["lastMessage"] = doc["messages"][-1]
             items.append(doc)
     except PyMongoError as exc:
         return jsonify({"error": f"MongoDB no disponible: {exc}"}), 503
 
-    return jsonify({"items": items, "count": len(items)})
+    return jsonify({"items": items, "count": len(items), "conversations": items})
 
 
 # ===== IA: Doctor (XML ONLY) =====
@@ -206,10 +407,17 @@ Estudios/URLs: {studies}
 Responde en español en formato claro y con viñetas.
 """
     try:
-        resp = gemini_model.generate_content(prompt)
-        text = (resp.text or "").strip()
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un asistente médico experto. Responde siempre en español."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        text = (response.choices[0].message.content or "").strip()
     except Exception as e:
-        text = f"(demo) Error con Gemini: {e}"
+        text = f"(demo) Error con OpenAI: {e}"
 
     # Return XML response
     return create_xml_response({ "recommendation": text })
@@ -245,10 +453,17 @@ Síntomas: {symptoms}
 Estudios/URLs: {studies}
 """
     try:
-        resp = gemini_model.generate_content(prompt)
-        text = (resp.text or "").strip()
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un asistente médico experto. Responde siempre en español."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        text = (response.choices[0].message.content or "").strip()
     except Exception as e:
-        text = f"(demo) Error con Gemini: {e}"
+        text = f"(demo) Error con OpenAI: {e}"
 
     # Return response based on client type
     if is_mobile:
@@ -298,14 +513,47 @@ Si el documento es clínico, NO des diagnósticos; resume hallazgos.
 """
 
     try:
+        import base64
         
-        parts = [
-            {"mime_type": content_type, "data": file_bytes},
-            prompt
-        ]
-        resp = gemini_model.generate_content(parts)
-        text = (resp.text or "").strip()
-
+        # Convertir archivo a base64 para OpenAI
+        file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+        
+        # Determinar el tipo de contenido para OpenAI
+        if content_type.startswith('image/'):
+            # Para imágenes, usar GPT-4 Vision
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{content_type};base64,{file_base64}"
+                            }
+                        }
+                    ]
+                }
+            ]
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                temperature=0.7
+            )
+            text = (response.choices[0].message.content or "").strip()
+        else:
+            # Para PDFs y otros documentos, usar GPT-4 con el texto extraído
+            # Nota: OpenAI no procesa PDFs directamente, necesitarías extraer el texto primero
+            # Por ahora, usamos un enfoque de texto plano
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un asistente experto en análisis de documentos médicos."},
+                    {"role": "user", "content": f"{prompt}\n\nNota: El archivo es de tipo {content_type}. Si es necesario procesar el contenido, indica que se requiere extracción de texto previa."}
+                ],
+                temperature=0.7
+            )
+            text = (response.choices[0].message.content or "").strip()
         
         try:
             payload = json.loads(text)
@@ -319,7 +567,7 @@ Si el documento es clínico, NO des diagnósticos; resume hallazgos.
         return jsonify(payload)
 
     except Exception as e:
-        return jsonify({"error": f"Error procesando archivo con Gemini: {e}"}), 500
+        return jsonify({"error": f"Error procesando archivo con OpenAI: {e}"}), 500
 
 
 # ===== IA: File Analyzer (XML) =====
@@ -360,12 +608,47 @@ Responde SOLO con un JSON válido (sin explicaciones) con esta forma:
 """
 
     try:
-        parts = [
-            {"mime_type": content_type, "data": file_bytes},
-            prompt
-        ]
-        resp = gemini_model.generate_content(parts)
-        text = (resp.text or "").strip()
+        import base64
+        
+        # Convertir archivo a base64 para OpenAI
+        file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+        
+        # Determinar el tipo de contenido para OpenAI
+        if content_type.startswith('image/'):
+            # Para imágenes, usar GPT-4 Vision
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{content_type};base64,{file_base64}"
+                            }
+                        }
+                    ]
+                }
+            ]
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                temperature=0.7
+            )
+            text = (response.choices[0].message.content or "").strip()
+        else:
+            # Para PDFs y otros documentos, usar GPT-4 con el texto extraído
+            # Nota: OpenAI no procesa PDFs directamente, necesitarías extraer el texto primero
+            # Por ahora, usamos un enfoque de texto plano
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un asistente experto en análisis de documentos médicos."},
+                    {"role": "user", "content": f"{prompt}\n\nNota: El archivo es de tipo {content_type}. Si es necesario procesar el contenido, indica que se requiere extracción de texto previa."}
+                ],
+                temperature=0.7
+            )
+            text = (response.choices[0].message.content or "").strip()
 
         # parsear el JSON del modelo
         try:
@@ -396,7 +679,7 @@ Responde SOLO con un JSON válido (sin explicaciones) con esta forma:
         return Response(xml_str, mimetype="application/xml")
 
     except Exception as e:
-        return create_xml_response({"error": f"Error procesando archivo con Gemini: {e}"})
+        return create_xml_response({"error": f"Error procesando archivo con OpenAI: {e}"})
 
 
 if __name__ == "__main__":
