@@ -3,6 +3,7 @@ Módulo de conexión a bases de datos
 Maneja conexiones a PostgreSQL y MongoDB
 """
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -13,7 +14,35 @@ from typing import Optional, Dict, List, Any
 import logging
 import bcrypt
 
-load_dotenv()
+# Cargar .env con manejo de errores de codificación
+try:
+    load_dotenv()
+except UnicodeDecodeError as e:
+    # Si hay error de codificación, intentar cargar manualmente
+    import sys
+    import io
+    env_path = Path(__file__).parent / '.env'
+    if env_path.exists():
+        try:
+            # Intentar leer con diferentes codificaciones
+            for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                try:
+                    with open(env_path, 'r', encoding=encoding) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith('#') and '=' in line:
+                                key, value = line.split('=', 1)
+                                os.environ[key.strip()] = value.strip()
+                    logger.info(f"✅ .env cargado con codificación {encoding}")
+                    break
+                except (UnicodeDecodeError, Exception):
+                    continue
+        except Exception as e2:
+            logger.warning(f"⚠️ No se pudo cargar .env: {e2}")
+    else:
+        logger.warning("⚠️ Archivo .env no encontrado")
+except Exception as e:
+    logger.warning(f"⚠️ Error cargando .env: {e}")
 
 logger = logging.getLogger(__name__)
 

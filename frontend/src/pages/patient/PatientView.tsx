@@ -254,6 +254,7 @@ export default function PatientView() {
   const isProcessingIceCandidatesRef = useRef<boolean>(false);
   const streamAssignedRef = useRef<boolean>(false);
   const welcomeMessageSentRef = useRef<boolean>(false);
+  const pacienteNombreRef = useRef<string>("");
   const [previewFile, setPreviewFile] = useState<Archivo | null>(null);
 
 
@@ -402,9 +403,11 @@ export default function PatientView() {
 
       // Actualizar información del usuario con datos del paciente
       if (patientData) {
+        const nombreCompleto = `${patientData.nombre} ${patientData.apellido}`.trim();
+        pacienteNombreRef.current = patientData.nombre || "";
         setUserInfo(prev => ({
           ...prev,
-          paciente_nombre: `${patientData.nombre} ${patientData.apellido}`.trim()
+          paciente_nombre: nombreCompleto
         }));
       }
 
@@ -580,6 +583,20 @@ export default function PatientView() {
       setAvatarStatus("connecting");
       toast.loading("Creando agente médico...", { id: "agent-creation" });
 
+      // Construir instrucciones con contexto del paciente
+      let patientContext = "";
+      if (state.PACIENTE.id && (state.PACIENTE.nombre || state.PACIENTE.apellido)) {
+        const nombreCompleto = `${state.PACIENTE.nombre} ${state.PACIENTE.apellido}`.trim();
+        patientContext = `\n\nCONTEXTO DEL PACIENTE ACTUAL:\n- Nombre: ${nombreCompleto || 'No disponible'}\n- ID: ${state.PACIENTE.id}`;
+        if (state.PACIENTE.fecha_nacimiento) {
+          patientContext += `\n- Fecha de nacimiento: ${state.PACIENTE.fecha_nacimiento}`;
+        }
+        if (state.PACIENTE.sexo) {
+          patientContext += `\n- Sexo: ${state.PACIENTE.sexo}`;
+        }
+        patientContext += `\n\nIMPORTANTE: Usa este contexto para personalizar tus respuestas y dar seguimiento a consultas anteriores.`;
+      }
+
       const instructions = `Eres un asistente médico virtual profesional. IMPORTANTE: DEBES HABLAR ÚNICAMENTE EN ESPAÑOL. NUNCA respondas en inglés u otro idioma.
 
 INSTRUCCIONES CRÍTICAS:
@@ -589,7 +606,10 @@ INSTRUCCIONES CRÍTICAS:
 - Proporciona información médica general pero siempre recomienda consultar con un médico real para diagnósticos
 - Si te preguntan algo fuera del contexto médico, amablemente redirige la conversación
 - Usa un tono cordial y cercano pero profesional
-- Todas tus respuestas deben estar completamente en español`;
+- Todas tus respuestas deben estar completamente en español
+- PREGUNTA HASTA QUE LLEGUES A UN DIAGNOSTICO, NO ESPECULES
+- NO MUESTRES LA INFORMACIÓN DEL PACIENTE A MENOS QUE SE TE PIDA EXPLÍCITAMENTE
+- Usa el historial de conversaciones previas para dar seguimiento a consultas anteriores y mantener continuidad${patientContext}`;
 
       // 1. Crear knowledge base (opcional, podemos omitirlo si falla)
       let knowledgeId = null;
@@ -708,7 +728,7 @@ INSTRUCCIONES CRÍTICAS:
       setAvatarStatus("disconnected");
       throw error;
     }
-  }, [DID_API_KEY, DID_API_URL]);
+  }, [DID_API_KEY, DID_API_URL, state.PACIENTE]);
 
   // Conectar a D-ID stream
   const connectDIDStream = useCallback(async () => {
@@ -784,23 +804,56 @@ INSTRUCCIONES CRÍTICAS:
           if (dataChannelRef.current && dataChannelRef.current.readyState === 'open' && !welcomeMessageSentRef.current) {
             setTimeout(async () => {
               try {
-                if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-                  const welcomeMessage = "Hola";
-                  console.log("🚀 Enviando mensaje de bienvenida (ICE connected + data channel open):", welcomeMessage);
-                  welcomeMessageSentRef.current = true;
+              if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                // Obtener mensaje de bienvenida personalizado del backend
+                let welcomeMessage = "Hola, ¿en qué puedo ayudarte hoy?";
+                try {
+                  const patientId = state.PACIENTE.id;
+                  const userId = state.PACIENTE.usuario_id;
+                  if (patientId || userId) {
+                    const welcomeRes = await fetch(`${DEFAULT_API}/api/ai/patient/welcome`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ patientId, userId })
+                    });
+                    if (welcomeRes.ok) {
+                      const welcomeData = await welcomeRes.json();
+                      if (welcomeData.message) {
+                        welcomeMessage = welcomeData.message;
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.warn("⚠️ Error obteniendo mensaje de bienvenida, usando mensaje por defecto:", error);
+                  // Usar mensaje por defecto con nombre si está disponible
+                  const nombrePaciente = pacienteNombreRef.current;
+                  if (nombrePaciente && nombrePaciente.trim()) {
+                    welcomeMessage = `Hola ${nombrePaciente.trim()}, ¿en qué puedo ayudarte hoy?`;
+                  }
+                }
+                console.log("🚀 Enviando mensaje de bienvenida (ICE connected + data channel open):", welcomeMessage);
+                welcomeMessageSentRef.current = true;
                   
                   // Enviar mensaje a través del data channel
-                  dataChannelRef.current.send(`chat/text:${encodeURIComponent(welcomeMessage)}`);
+                  const encodedMessage = `chat/text:${encodeURIComponent(welcomeMessage)}`;
+                  console.log("📤 Enviando por data channel:", encodedMessage);
+                  dataChannelRef.current.send(encodedMessage);
                   
                   // También enviar a través de la API REST como respaldo
                   try {
                     await sendMessageToAvatar(welcomeMessage);
+                    console.log("✅ Mensaje enviado por API REST");
                   } catch (apiError) {
-                    console.warn("Error enviando mensaje por API (no crítico):", apiError);
+                    console.warn("⚠️ Error enviando mensaje por API (no crítico):", apiError);
                   }
                   
                   // Guardar mensaje del usuario en la DB
-                  await saveMessageToDB("user", welcomeMessage);
+                  try {
+                    await saveMessageToDB("user", welcomeMessage);
+                    console.log("✅ Mensaje guardado en DB");
+                  } catch (dbError) {
+                    console.warn("⚠️ Error guardando en DB (no crítico):", dbError);
+                  }
                   
                   // Mostrar mensaje en el chat
                   const msgHistory = document.getElementById("msgHistory");
@@ -934,22 +987,55 @@ INSTRUCCIONES CRÍTICAS:
           setTimeout(async () => {
             try {
               if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-                const welcomeMessage = "Hola";
+                // Obtener mensaje de bienvenida personalizado del backend
+                let welcomeMessage = "Hola, ¿en qué puedo ayudarte hoy?";
+                try {
+                  const patientId = state.PACIENTE.id;
+                  const userId = state.PACIENTE.usuario_id;
+                  if (patientId || userId) {
+                    const welcomeRes = await fetch(`${DEFAULT_API}/api/ai/patient/welcome`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ patientId, userId })
+                    });
+                    if (welcomeRes.ok) {
+                      const welcomeData = await welcomeRes.json();
+                      if (welcomeData.message) {
+                        welcomeMessage = welcomeData.message;
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.warn("⚠️ Error obteniendo mensaje de bienvenida, usando mensaje por defecto:", error);
+                  // Usar mensaje por defecto con nombre si está disponible
+                  const nombrePaciente = pacienteNombreRef.current;
+                  if (nombrePaciente && nombrePaciente.trim()) {
+                    welcomeMessage = `Hola ${nombrePaciente.trim()}, ¿en qué puedo ayudarte hoy?`;
+                  }
+                }
                 console.log("🚀 Enviando mensaje de bienvenida automático (data channel abierto):", welcomeMessage);
                 welcomeMessageSentRef.current = true;
                 
                 // Enviar mensaje a través del data channel
-                dataChannelRef.current.send(`chat/text:${encodeURIComponent(welcomeMessage)}`);
+                const encodedMessage = `chat/text:${encodeURIComponent(welcomeMessage)}`;
+                console.log("📤 Enviando por data channel:", encodedMessage);
+                dataChannelRef.current.send(encodedMessage);
                 
                 // También enviar a través de la API REST como respaldo
                 try {
                   await sendMessageToAvatar(welcomeMessage);
+                  console.log("✅ Mensaje enviado por API REST");
                 } catch (apiError) {
-                  console.warn("Error enviando mensaje por API (no crítico):", apiError);
+                  console.warn("⚠️ Error enviando mensaje por API (no crítico):", apiError);
                 }
                 
                 // Guardar mensaje del usuario en la DB
-                await saveMessageToDB("user", welcomeMessage);
+                try {
+                  await saveMessageToDB("user", welcomeMessage);
+                  console.log("✅ Mensaje guardado en DB");
+                } catch (dbError) {
+                  console.warn("⚠️ Error guardando en DB (no crítico):", dbError);
+                }
                 
                 // Mostrar mensaje en el chat
                 const msgHistory = document.getElementById("msgHistory");

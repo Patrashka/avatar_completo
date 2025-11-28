@@ -2,6 +2,7 @@ import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any, Dict, Optional
+import requests
 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
@@ -9,7 +10,6 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from pathlib import Path
-import os
 
 # Cargar .env desde el directorio del backend
 backend_dir = Path(__file__).parent
@@ -438,15 +438,83 @@ def ai_patient():
     patient = body.get("patient", {})
     symptoms = body.get("symptoms", "")
     studies  = body.get("studies", [])
+    
+    # Obtener patientId o userId del request para contexto
+    patient_id = _safe_int(body.get("patientId")) or _safe_int(body.get("patient_id"))
+    user_id = _safe_int(body.get("userId")) or _safe_int(body.get("user_id")) or _safe_int(body.get("usuarioId"))
+    
+    # Construir contexto del paciente desde la base de datos
+    patient_context = ""
+    conversation_history = ""
+    
+    if patient_id or user_id:
+        try:
+            # Intentar obtener datos del paciente desde PostgreSQL
+            # Nota: Esto requiere que el backend tenga acceso a db_connection o hacer una llamada HTTP al servicio de pacientes
+            import requests
+            PATIENT_API = os.getenv("VITE_PATIENT_API") or os.getenv("PATIENT_API") or "http://localhost:8003"
+            
+            if patient_id:
+                try:
+                    patient_response = requests.get(f"{PATIENT_API}/api/db/patient/{patient_id}", timeout=2)
+                    if patient_response.status_code == 200:
+                        patient_data = patient_response.json()
+                        patient_context = f"""
+INFORMACIÓN DEL PACIENTE:
+- Nombre: {patient_data.get('nombre', '')} {patient_data.get('apellido', '')}
+- Fecha de nacimiento: {patient_data.get('fecha_nacimiento', '')}
+- Sexo: {patient_data.get('sexo', '')}
+- Altura: {patient_data.get('altura', '')} cm
+- Peso: {patient_data.get('peso', '')} kg
+- Estilo de vida: {patient_data.get('estilo_vida', '')}
+"""
+                except Exception as e:
+                    print(f"⚠️ No se pudo obtener datos del paciente: {e}")
+            
+            # Obtener historial de conversaciones desde MongoDB
+            try:
+                collection = get_mongo_collection("did_conversations")
+                query = {}
+                if patient_id:
+                    query["patientId"] = patient_id
+                elif user_id:
+                    query["userId"] = user_id
+                
+                if query:
+                    conversations = list(collection.find(query).sort("updatedAt", -1).limit(3))
+                    if conversations:
+                        conversation_history = "\n\nHISTORIAL DE CONVERSACIONES PREVIAS:\n"
+                        for conv in conversations:
+                            if conv.get("messages"):
+                                # Tomar los últimos 5 mensajes de cada conversación
+                                recent_messages = conv["messages"][-5:]
+                                for msg in recent_messages:
+                                    role = msg.get("role", "")
+                                    content = msg.get("content", "")
+                                    if content:
+                                        conversation_history += f"- {role.upper()}: {content[:200]}\n"
+            except Exception as e:
+                print(f"⚠️ No se pudo obtener historial de conversaciones: {e}")
+        except Exception as e:
+            print(f"⚠️ Error obteniendo contexto del paciente: {e}")
 
     prompt = f"""
-Eres un asistente que habla con un PACIENTE. Tono empático y claro.
-Incluye:
-- Explicación sencilla de lo que podría estar pasando (no diagnóstico).
+Eres un asistente médico virtual que habla con un PACIENTE. Tono empático, claro y profesional.
+IMPORTANTE: SIEMPRE responde en ESPAÑOL, nunca en inglés.
+
+{patient_context}
+
+{conversation_history}
+
+INSTRUCCIONES:
+- Explicación sencilla de lo que podría estar pasando (no diagnóstico definitivo).
 - Señales de alarma si aplican.
 - Pasos sugeridos (p.ej. agendar cita).
 - A veces el paciente se siente más cómodo hablando en ese momento contigo, es por eso que no debe verse obligado a dejarte de hablar, es decir no solo lo corras a que hable con el médico, pláticale.
-- PREGUNTA HASTA QUE LLEGUES A UN DIAGNOSTICO, NO ESPECULES. NO MUESTRES LA INFROMACIÓN DEL PACIENTE A MENOS QUE SE TE PIDA
+- PREGUNTA HASTA QUE LLEGUES A UN DIAGNOSTICO, NO ESPECULES.
+- NO MUESTRES LA INFORMACIÓN DEL PACIENTE A MENOS QUE SE TE PIDA EXPLÍCITAMENTE.
+- Usa el historial de conversaciones previas para dar seguimiento a consultas anteriores y mantener continuidad en la conversación.
+- Si el paciente menciona algo relacionado con consultas previas, haz referencia a ellas de manera natural.
 
 Paciente: {patient}
 Síntomas: {symptoms}
@@ -470,7 +538,72 @@ Estudios/URLs: {studies}
         return jsonify({ "message": text })
     else:
         return create_xml_response({ "message": text })
+
+
+# ===== IA: Mensaje de Bienvenida Personalizado =====
+@app.post("/api/ai/patient/welcome")
+def ai_patient_welcome():
+    """
+    Genera un mensaje de bienvenida personalizado para el paciente.
+    Acepta JSON con patientId o userId.
+    """
+    body = request.get_json(silent=True) or {}
+    patient_id = _safe_int(body.get("patientId")) or _safe_int(body.get("patient_id"))
+    user_id = _safe_int(body.get("userId")) or _safe_int(body.get("user_id")) or _safe_int(body.get("usuarioId"))
     
+    patient_name = "paciente"
+    
+    # Intentar obtener el nombre del paciente
+    if patient_id or user_id:
+        try:
+            PATIENT_API = os.getenv("VITE_PATIENT_API") or os.getenv("PATIENT_API") or "http://localhost:8003"
+            
+            if patient_id:
+                try:
+                    patient_response = requests.get(f"{PATIENT_API}/api/db/patient/{patient_id}", timeout=2)
+                    if patient_response.status_code == 200:
+                        patient_data = patient_response.json()
+                        nombre = patient_data.get('nombre', '').strip()
+                        if nombre:
+                            patient_name = nombre
+                except Exception as e:
+                    print(f"⚠️ No se pudo obtener nombre del paciente: {e}")
+        except Exception as e:
+            print(f"⚠️ Error obteniendo datos del paciente: {e}")
+    
+    # Generar mensaje de bienvenida personalizado
+    welcome_message = f"Hola {patient_name}, ¿en qué puedo ayudarte hoy?"
+    
+    # Opcional: usar IA para generar un mensaje más variado
+    try:
+        prompt = f"""Genera un mensaje de bienvenida cálido y personalizado para un paciente llamado {patient_name}.
+El mensaje debe ser:
+- Cálido y empático
+- En español
+- Breve (máximo 15 palabras)
+- Mencionar el nombre del paciente
+- Invitar a hacer una consulta
+
+Responde SOLO con el mensaje, sin explicaciones adicionales."""
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un asistente médico virtual. Genera mensajes de bienvenida cálidos y profesionales en español."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8,
+            max_tokens=50
+        )
+        generated_message = (response.choices[0].message.content or "").strip()
+        if generated_message:
+            welcome_message = generated_message
+    except Exception as e:
+        print(f"⚠️ Error generando mensaje con IA, usando mensaje por defecto: {e}")
+    
+    return jsonify({ "message": welcome_message, "patientName": patient_name })
+
+
 # ===== IA: File Analyzer (JSON) =====
 @app.post("/api/ai/file/analyze_json")
 def ai_file_analyze_json():

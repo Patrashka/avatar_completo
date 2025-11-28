@@ -425,14 +425,19 @@ DECLARE
     v_usuario2_id INT;
     v_usuario3_id INT;
     v_usuario4_id INT;
+    v_usuario5_id INT;
     v_paciente1_id INT;
     v_paciente2_id INT;
+    v_paciente3_id INT;
     v_doctor1_id INT;
     v_doctor2_id INT;
     v_archivo1_id INT;
     v_archivo2_id INT;
     v_archivo3_id INT;
     v_archivo4_id INT;
+    v_archivo5_id INT;
+    v_episodio3_id INT;
+    v_cita3_id INT;
 BEGIN
     -- ===========================================
     -- PACIENTE 1: Carlos Ramírez
@@ -567,6 +572,212 @@ BEGIN
     INSERT INTO ARCHIVO_ASOCIACION (archivo_id, entidad, entidad_id, descripcion, creado_por_usuario_id)
     VALUES (v_archivo2_id, 'PACIENTE', v_paciente2_id, 'Foto de perfil', v_usuario2_id)
     ON CONFLICT DO NOTHING;
+
+    -- ===========================================
+    -- PACIENTE 3: Roberto Mendoza Hernández
+    -- ===========================================
+    
+    -- Crear usuario
+        INSERT INTO USUARIO (username, correo, telefono, password_hash, rol_id)
+        VALUES (
+            'roberto_mendoza',
+            'roberto.mendoza@example.com',
+            '+52 81 5555 8888',
+            '$2b$12$.TueJF/yXiq3mVq6EbxRe.ysl9biFS7KF0UqIxnamYkUO1dDgCuyu',
+            3  -- Rol: Paciente
+        )
+        ON CONFLICT (correo) DO UPDATE SET 
+            username = EXCLUDED.username,
+            telefono = EXCLUDED.telefono
+        RETURNING id INTO v_usuario5_id;
+        
+        IF v_usuario5_id IS NULL THEN
+            SELECT id INTO v_usuario5_id FROM USUARIO WHERE correo = 'roberto.mendoza@example.com';
+        END IF;
+
+        -- Crear archivo de foto
+        SELECT id INTO v_archivo5_id 
+        FROM ARCHIVO 
+        WHERE hash_integridad = 'sha256:roberto_mendoza_photo_' || v_usuario5_id;
+        
+        IF v_archivo5_id IS NULL THEN
+            INSERT INTO ARCHIVO (tipo, url, hash_integridad)
+            VALUES (
+                'image/jpeg',
+                'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=faces',
+                'sha256:roberto_mendoza_photo_' || v_usuario5_id
+            )
+            RETURNING id INTO v_archivo5_id;
+        END IF;
+
+        -- Crear paciente
+        IF EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'paciente' AND column_name = 'apellido') THEN
+            INSERT INTO PACIENTE (
+                usuario_id, nombre, apellido, fecha_nacimiento, sexo, altura, peso,
+                estilo_vida, alergias, id_tipo_sangre, id_ocupacion, id_estado_civil,
+                id_medico_gen, telefono, correo, direccion
+            ) VALUES (
+                v_usuario5_id,
+                'Roberto',
+                'Mendoza Hernández',
+                '1985-11-08',
+                'Masculino',
+                178.0,
+                82.5,
+                'Activo - Ejercicio 3 veces por semana, dieta balanceada',
+                'Penicilina, Polvo',
+                3,  -- Tipo sangre: B+
+                3,  -- Ocupación: Profesionista
+                2,  -- Estado civil: Casado
+                1,  -- Médico general: Dr. Cameron Cordara
+                '+52 81 5555 8888',
+                'roberto.mendoza@example.com',
+                'Blvd. Lázaro Cárdenas #2345, Col. Del Valle, San Pedro Garza García, NL'
+            )
+            ON CONFLICT (correo) DO UPDATE SET
+                nombre = EXCLUDED.nombre,
+                apellido = EXCLUDED.apellido,
+                fecha_nacimiento = EXCLUDED.fecha_nacimiento,
+                sexo = EXCLUDED.sexo,
+                altura = EXCLUDED.altura,
+                peso = EXCLUDED.peso,
+                estilo_vida = EXCLUDED.estilo_vida,
+                alergias = EXCLUDED.alergias,
+                id_tipo_sangre = EXCLUDED.id_tipo_sangre,
+                id_ocupacion = EXCLUDED.id_ocupacion,
+                id_estado_civil = EXCLUDED.id_estado_civil,
+                id_medico_gen = EXCLUDED.id_medico_gen,
+                telefono = EXCLUDED.telefono,
+                direccion = EXCLUDED.direccion
+            RETURNING id INTO v_paciente3_id;
+            
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'paciente' AND column_name = 'foto_archivo_id') THEN
+                UPDATE PACIENTE SET foto_archivo_id = v_archivo5_id WHERE id = v_paciente3_id;
+            END IF;
+        ELSE
+            INSERT INTO PACIENTE (
+                usuario_id, nombre, fecha_nacimiento, sexo, altura, peso,
+                estilo_vida, alergias, id_tipo_sangre, id_ocupacion, id_estado_civil,
+                id_medico_gen, telefono, correo, direccion
+            ) VALUES (
+                v_usuario5_id,
+                'Roberto Mendoza Hernández',
+                '1985-11-08',
+                'Masculino',
+                178.0,
+                82.5,
+                'Activo - Ejercicio 3 veces por semana, dieta balanceada',
+                'Penicilina, Polvo',
+                3,  -- Tipo sangre: B+
+                3,  -- Ocupación: Profesionista
+                2,  -- Estado civil: Casado
+                1,  -- Médico general: Dr. Cameron Cordara
+                '+52 81 5555 8888',
+                'roberto.mendoza@example.com',
+                'Blvd. Lázaro Cárdenas #2345, Col. Del Valle, San Pedro Garza García, NL'
+            )
+            ON CONFLICT (correo) DO UPDATE SET
+                nombre = EXCLUDED.nombre,
+                fecha_nacimiento = EXCLUDED.fecha_nacimiento,
+                sexo = EXCLUDED.sexo,
+                altura = EXCLUDED.altura,
+                peso = EXCLUDED.peso,
+                estilo_vida = EXCLUDED.estilo_vida,
+                alergias = EXCLUDED.alergias,
+                id_tipo_sangre = EXCLUDED.id_tipo_sangre,
+                id_ocupacion = EXCLUDED.id_ocupacion,
+                id_estado_civil = EXCLUDED.id_estado_civil,
+                id_medico_gen = EXCLUDED.id_medico_gen,
+                telefono = EXCLUDED.telefono,
+                direccion = EXCLUDED.direccion
+            RETURNING id INTO v_paciente3_id;
+            
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'paciente' AND column_name = 'foto_archivo_id') THEN
+                UPDATE PACIENTE SET foto_archivo_id = v_archivo5_id WHERE id = v_paciente3_id;
+            END IF;
+        END IF;
+        
+        IF v_paciente3_id IS NULL THEN
+            SELECT id INTO v_paciente3_id FROM PACIENTE WHERE correo = 'roberto.mendoza@example.com';
+        END IF;
+
+        -- Asociar foto al paciente
+        INSERT INTO ARCHIVO_ASOCIACION (archivo_id, entidad, entidad_id, descripcion, creado_por_usuario_id)
+        VALUES (v_archivo5_id, 'PACIENTE', v_paciente3_id, 'Foto de perfil del paciente', v_usuario5_id)
+        ON CONFLICT DO NOTHING;
+
+        -- Crear episodio médico
+        INSERT INTO EPISODIO (id_paciente, fecha_inicio, motivo)
+        VALUES (
+            v_paciente3_id,
+            NOW() - INTERVAL '15 days',
+            'Control de diabetes tipo 2 y seguimiento de tratamiento'
+        )
+        ON CONFLICT DO NOTHING
+        RETURNING id INTO v_episodio3_id;
+        
+        IF v_episodio3_id IS NULL THEN
+            SELECT id INTO v_episodio3_id 
+            FROM EPISODIO 
+            WHERE id_paciente = v_paciente3_id 
+            AND motivo = 'Control de diabetes tipo 2 y seguimiento de tratamiento'
+            AND fecha_fin IS NULL
+            ORDER BY fecha_inicio DESC
+            LIMIT 1;
+        END IF;
+
+        -- Crear cita médica
+        INSERT INTO CITA (paciente_id, medico_id, fecha_inicio, fecha_fin, id_estado_cita, id_tipo_cita)
+        VALUES (
+            v_paciente3_id,
+            1,  -- Dr. Cameron Cordara
+            NOW() - INTERVAL '10 days',
+            (NOW() - INTERVAL '10 days') + INTERVAL '30 minutes',
+            2,  -- Estado: Completada
+            1   -- Tipo: General
+        )
+        ON CONFLICT DO NOTHING
+        RETURNING id INTO v_cita3_id;
+        
+        IF v_cita3_id IS NULL THEN
+            SELECT id INTO v_cita3_id 
+            FROM CITA 
+            WHERE paciente_id = v_paciente3_id 
+            AND fecha_inicio::date = (NOW() - INTERVAL '10 days')::date
+            ORDER BY fecha_inicio DESC
+            LIMIT 1;
+        END IF;
+
+        -- Crear consulta médica
+        INSERT INTO CONSULTA (
+            cita_id, id_paciente, id_medico, id_estado_consulta, id_episodio, fecha_hora, narrativa, diagnostico_final
+        )
+        VALUES (
+            v_cita3_id,
+            v_paciente3_id,
+            1,  -- Dr. Cameron Cordara
+            2,  -- Estado: Cerrada
+            v_episodio3_id,
+            NOW() - INTERVAL '10 days',
+            'Paciente acude para control de diabetes tipo 2. Refiere buen cumplimiento del tratamiento con metformina 500mg dos veces al día. Glucemia en ayunas: 110 mg/dL (mejoría). Presión arterial: 128/82 mmHg. Peso: 82.5 kg (estable). Se recomienda continuar con dieta baja en carbohidratos y ejercicio regular. Próxima cita en 3 meses.',
+            'Diabetes mellitus tipo 2, controlada'
+        )
+        ON CONFLICT DO NOTHING;
+
+        -- Crear segunda cita (más reciente)
+        INSERT INTO CITA (paciente_id, medico_id, fecha_inicio, fecha_fin, id_estado_cita, id_tipo_cita)
+        VALUES (
+            v_paciente3_id,
+            1,
+            NOW() - INTERVAL '2 days',
+            (NOW() - INTERVAL '2 days') + INTERVAL '30 minutes',
+            1,  -- Estado: Programada
+            1   -- Tipo: General
+        )
+        ON CONFLICT DO NOTHING;
 
     -- ===========================================
     -- DOCTOR 1: Dr. Roberto Mendoza
