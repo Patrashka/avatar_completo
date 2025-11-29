@@ -1,8 +1,13 @@
 import os
+import json
+import sys
+import traceback
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any, Dict, Optional
 import requests
+from bson import ObjectId
+from bson.errors import InvalidId
 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
@@ -15,11 +20,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent
 env_path = backend_dir / '.env'
 
-print(f"🔍 Buscando .env en: {env_path}")
-print(f"📁 Archivo existe: {env_path.exists()}")
-
 if env_path.exists():
-    print(f"📄 Leyendo archivo .env directamente...")
     with open(env_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         for line in lines:
@@ -27,7 +28,6 @@ if env_path.exists():
             if line and not line.startswith('#') and '=' in line:
                 key, value = line.split('=', 1)
                 os.environ[key.strip()] = value.strip()
-                print(f"   ✅ {key.strip()} = {value.strip()[:20]}...")
 
 # También intentar con load_dotenv por si acaso
 load_dotenv(dotenv_path=env_path, override=True)
@@ -286,7 +286,6 @@ def save_did_conversation():
             }
             try:
                 result = collection.insert_one(conversation_doc)
-                print(f"✅ Nueva conversación creada: {result.inserted_id}")
                 return jsonify({"id": str(result.inserted_id), "conversationId": str(result.inserted_id)}), 201
             except Exception as insert_error:
                 print(f"❌ Error insertando conversación en MongoDB: {insert_error}")
@@ -296,18 +295,24 @@ def save_did_conversation():
         else:
             # Agregar mensaje a conversación existente
             try:
+                # Siempre actualizar patientId y userId si se proporcionan, incluso si ya existen
+                update_data = {
+                    "$push": {"messages": message},
+                    "$set": {
+                        "updatedAt": datetime.utcnow()
+                    }
+                }
+                # Actualizar patientId si se proporciona (incluso si ya existe uno)
+                if patient_id is not None:
+                    update_data["$set"]["patientId"] = patient_id
+                # Actualizar userId si se proporciona (incluso si ya existe uno)
+                if usuario_id is not None:
+                    update_data["$set"]["userId"] = usuario_id
+                
                 collection.update_one(
                     {"_id": conversation["_id"]},
-                    {
-                        "$push": {"messages": message},
-                        "$set": {
-                            "updatedAt": datetime.utcnow(),
-                            **({"userId": usuario_id} if usuario_id else {}),
-                            **({"patientId": patient_id} if patient_id else {})
-                        }
-                    }
+                    update_data
                 )
-                print(f"✅ Mensaje agregado a conversación existente: {conversation['_id']}")
                 return jsonify({"id": str(conversation["_id"]), "conversationId": str(conversation["_id"])}), 200
             except Exception as update_error:
                 print(f"❌ Error actualizando conversación en MongoDB: {update_error}")
@@ -353,24 +358,57 @@ def list_did_conversations():
     session_uuid = request.args.get("sessionUuid")
 
     # Construir query compatible con ambos formatos
+    # Si se proporciona patientId, buscar por patientId
     if patient_id is not None:
         query["patientId"] = patient_id
-    if user_id is not None:
+        # También buscar por userId si se proporciona (puede haber conversaciones sin patientId pero con userId)
+        if user_id is not None:
+            # Usar $or para buscar conversaciones que tengan el patientId O el userId
+            query = {
+                "$or": [
+                    {"patientId": patient_id},
+                    {"userId": user_id}
+                ]
+            }
+    elif user_id is not None:
+        # Si no hay patientId pero hay userId, buscar por userId
         query["userId"] = user_id
+    
+    # Agregar otros filtros si se proporcionan
     if agent_id:
-        query["agentId"] = agent_id
+        if "$or" in query:
+            # Si hay $or, agregar agentId a cada condición
+            for condition in query["$or"]:
+                condition["agentId"] = agent_id
+        else:
+            query["agentId"] = agent_id
     if chat_id:
-        query["chatId"] = chat_id
+        if "$or" in query:
+            for condition in query["$or"]:
+                condition["chatId"] = chat_id
+        else:
+            query["chatId"] = chat_id
     if consulta_id is not None:
-        query["consulta_id"] = consulta_id
+        if "$or" in query:
+            for condition in query["$or"]:
+                condition["consulta_id"] = consulta_id
+        else:
+            query["consulta_id"] = consulta_id
     if session_uuid:
-        query["session_uuid"] = session_uuid
+        if "$or" in query:
+            for condition in query["$or"]:
+                condition["session_uuid"] = session_uuid
+        else:
+            query["session_uuid"] = session_uuid
+    
 
     items = []
     try:
         # Ordenar por updatedAt (nuevo formato) o created_at (formato antiguo)
         cursor = collection.find(query).sort("updatedAt", -1).limit(limit)
+        count = 0
         for doc in cursor:
+            count += 1
             doc["id"] = str(doc.pop("_id"))
             # Normalizar formato de respuesta
             if "messages" in doc:
@@ -379,9 +417,128 @@ def list_did_conversations():
                     doc["lastMessage"] = doc["messages"][-1]
             items.append(doc)
     except PyMongoError as exc:
+        print(f"❌ Error en MongoDB: {exc}")
         return jsonify({"error": f"MongoDB no disponible: {exc}"}), 503
 
     return jsonify({"items": items, "count": len(items), "conversations": items})
+
+
+@app.get("/api/did/conversations/<conversation_id>/summary")
+def get_conversation_summary(conversation_id: str):
+    """
+    Obtiene un resumen de una conversación específica usando IA.
+    Retorna un párrafo resumen y hasta 5 bullets con lo más importante.
+    """
+    try:
+        # Obtener colección MongoDB
+        collection = get_mongo_collection("did_conversations")
+        
+        # Validar y limpiar el ID
+        conversation_id = str(conversation_id).strip()
+        
+        if len(conversation_id) != 24:
+            return jsonify({"error": f"ID de conversación inválido: longitud incorrecta ({len(conversation_id)} caracteres, debe ser 24)"}), 400
+        
+        try:
+            obj_id = ObjectId(conversation_id)
+        except InvalidId as e:
+            return jsonify({"error": f"ID de conversación inválido: '{conversation_id}'. Debe ser un ObjectId válido de 24 caracteres hexadecimales."}), 400
+        
+        # Buscar conversación
+        conversation = collection.find_one({"_id": obj_id})
+        if not conversation:
+            return jsonify({"error": "Conversación no encontrada"}), 404
+
+        messages = conversation.get("messages", [])
+        if not messages:
+            return jsonify({
+                "summary": "Esta conversación no contiene mensajes.",
+                "highlights": []
+            }), 200
+
+        # Construir el texto de la conversación
+        conversation_text = ""
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "").strip()
+            if content:
+                conversation_text += f"{role.upper()}: {content}\n"
+
+        # Generar resumen con IA
+        prompt = f"""Analiza la siguiente conversación entre un paciente y un asistente médico virtual y genera:
+1. Un párrafo resumen (máximo 150 palabras) que describa el contexto general de la conversación, los síntomas o preocupaciones principales del paciente, y las recomendaciones o información proporcionada.
+2. Hasta 5 puntos destacados (bullets) con la información más importante: síntomas mencionados, recomendaciones clave, preocupaciones principales, o cualquier dato clínico relevante.
+
+Conversación:
+{conversation_text}
+
+Responde en formato JSON con esta estructura:
+{{
+  "summary": "párrafo resumen aquí",
+  "highlights": [
+    "punto destacado 1",
+    "punto destacado 2",
+    ...
+  ]
+}}
+
+Responde SOLO con el JSON, sin texto adicional."""
+
+        if not openai_client:
+            raise Exception("OpenAI client no está inicializado. Verifica OPENAI_API_KEY.")
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un asistente médico experto. Responde siempre en español y en formato JSON válido."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        
+        text = (response.choices[0].message.content or "").strip()
+        
+        # Limpiar el texto (puede venir con markdown code blocks)
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+        result = json.loads(text)
+        
+        return jsonify({
+            "summary": result.get("summary", "No se pudo generar resumen."),
+            "highlights": result.get("highlights", [])[:5]
+        }), 200
+
+    except json.JSONDecodeError:
+        # Si falla el parseo JSON, crear un resumen básico
+        msg_count = len(messages) if 'messages' in locals() and messages else 0
+        return jsonify({
+            "summary": f"Conversación con {msg_count} mensajes. El paciente consultó sobre sus síntomas y recibió orientación médica.",
+            "highlights": [
+                f"Total de mensajes: {msg_count}",
+                "Consulta médica virtual",
+                "Orientación y recomendaciones proporcionadas"
+            ]
+        }), 200
+    except PyMongoError as e:
+        print(f"❌ [SUMMARY] Error MongoDB: {e}", file=sys.stderr)
+        return jsonify({"error": f"MongoDB no disponible: {e}"}), 503
+    except Exception as e:
+        print(f"❌ [SUMMARY] Error: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        # Retornar resumen básico en lugar de error 500
+        return jsonify({
+            "summary": "Conversación médica con mensajes intercambiados entre el paciente y el asistente virtual.",
+            "highlights": [
+                "Consulta médica virtual",
+                "Orientación proporcionada"
+            ]
+        }), 200
 
 
 # ===== IA: Doctor (XML ONLY) =====
@@ -816,5 +973,18 @@ Responde SOLO con un JSON válido (sin explicaciones) con esta forma:
 
 
 if __name__ == "__main__":
+    import sys
     port = int(os.getenv("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # En Windows, desactivar use_reloader para evitar errores de socket
+    # Mantener debug=True para ver errores detallados
+    use_reloader = os.getenv("USE_RELOADER", "false").lower() == "true"
+    if sys.platform == "win32":
+        use_reloader = False
+    
+    app.run(
+        host="0.0.0.0", 
+        port=port, 
+        debug=True,
+        use_reloader=use_reloader,
+        threaded=True
+    )

@@ -220,6 +220,24 @@ const patient = {
   },
   async getInteractions(patientId: number, limit: number = 50) {
     return await tryFetch(withBase(PATIENT_API, `/api/db/patient/${patientId}/interactions?limit=${limit}`));
+  },
+  async createDiagnosis(patientId: number, diagnosisData: {
+    id_episodio: number;
+    codigo_icd10?: string;
+    descripcion?: string;
+    es_principal?: boolean;
+  }) {
+    return await tryFetch(withBase(PATIENT_API, `/api/db/patient/${patientId}/diagnoses`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(diagnosisData),
+    });
+  },
+  async getConversations(patientId: number, limit: number = 10) {
+    return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations?patientId=${patientId}&limit=${limit}`));
+  },
+  async getConversationSummary(conversationId: string) {
+    return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations/${conversationId}/summary`));
   }
 };
 

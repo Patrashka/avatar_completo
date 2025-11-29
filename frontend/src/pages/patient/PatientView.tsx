@@ -804,7 +804,7 @@ INSTRUCCIONES CRÍTICAS:
           if (dataChannelRef.current && dataChannelRef.current.readyState === 'open' && !welcomeMessageSentRef.current) {
             setTimeout(async () => {
               try {
-              if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                if (!welcomeMessageSentRef.current && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
                 // Obtener mensaje de bienvenida personalizado del backend
                 let welcomeMessage = "Hola, ¿en qué puedo ayudarte hoy?";
                 try {
@@ -831,8 +831,8 @@ INSTRUCCIONES CRÍTICAS:
                     welcomeMessage = `Hola ${nombrePaciente.trim()}, ¿en qué puedo ayudarte hoy?`;
                   }
                 }
-                console.log("🚀 Enviando mensaje de bienvenida (ICE connected + data channel open):", welcomeMessage);
-                welcomeMessageSentRef.current = true;
+                  console.log("🚀 Enviando mensaje de bienvenida (ICE connected + data channel open):", welcomeMessage);
+                  welcomeMessageSentRef.current = true;
                   
                   // Enviar mensaje a través del data channel
                   const encodedMessage = `chat/text:${encodeURIComponent(welcomeMessage)}`;
@@ -1008,7 +1008,7 @@ INSTRUCCIONES CRÍTICAS:
                 } catch (error) {
                   console.warn("⚠️ Error obteniendo mensaje de bienvenida, usando mensaje por defecto:", error);
                   // Usar mensaje por defecto con nombre si está disponible
-                  const nombrePaciente = pacienteNombreRef.current;
+                const nombrePaciente = pacienteNombreRef.current;
                   if (nombrePaciente && nombrePaciente.trim()) {
                     welcomeMessage = `Hola ${nombrePaciente.trim()}, ¿en qué puedo ayudarte hoy?`;
                   }

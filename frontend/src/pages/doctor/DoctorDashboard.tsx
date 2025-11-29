@@ -457,6 +457,22 @@ export default function DoctorDashboard() {
        console.warn("Error cargando diagnósticos:", error);
      }
 
+     // Cargar conversaciones del avatar (últimas 10)
+     let avatarConversations: Array<Record<string, any>> = [];
+     try {
+       console.log(`🔍 Cargando conversaciones para patientId: ${patientId}`);
+       const conversationsResult = await api.patient.getConversations(patientId, 10);
+       console.log("📦 Resultado de conversaciones:", conversationsResult);
+       if (conversationsResult && conversationsResult.conversations) {
+         avatarConversations = conversationsResult.conversations;
+       } else if (conversationsResult && conversationsResult.items) {
+         avatarConversations = conversationsResult.items;
+       }
+       console.log(`✅ Cargadas ${avatarConversations.length} conversaciones`);
+     } catch (error) {
+       console.error("❌ Error cargando conversaciones del avatar:", error);
+     }
+
      let photoUrl: string | null = null;
      try {
       const photoResponse = await fetch(`${PATIENT_API}/api/db/patient/${patientId}/photo`);
@@ -523,6 +539,27 @@ export default function DoctorDashboard() {
          fecha_diagnostico: d.fecha_diagnostico || "",
          motivo: d.motivo || "",
        })),
+     }));
+
+     // Actualizar conversaciones del avatar
+     setConversations(avatarConversations.map((conv: any) => {
+       // Asegurar que el ID sea un string válido
+       let convId = "";
+       if (conv.id) {
+         convId = String(conv.id);
+       } else if (conv._id) {
+         convId = String(conv._id);
+       }
+       
+       return {
+         id: convId,
+         patientId: conv.patientId,
+         userId: conv.userId,
+         messages: conv.messages || [],
+         createdAt: conv.createdAt,
+         updatedAt: conv.updatedAt,
+         messageCount: conv.messageCount || (conv.messages ? conv.messages.length : 0)
+       };
      }));
    } catch (error) {
      console.error("Error cargando datos del paciente:", error);
@@ -1020,6 +1057,33 @@ export default function DoctorDashboard() {
 
  // ===== Estado para modales IA (pop-ups) =====
  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
+ 
+ // ===== Estado para modal de agregar condición =====
+ const [showAddConditionModal, setShowAddConditionModal] = useState(false);
+ const [newCondition, setNewCondition] = useState({
+   codigo_icd10: "",
+   descripcion: "",
+   es_principal: false,
+   fecha_diagnostico: new Date().toISOString().split('T')[0]
+ });
+ const [addingCondition, setAddingCondition] = useState(false);
+
+ // ===== Estado para conversaciones del avatar =====
+ const [conversations, setConversations] = useState<Array<{
+   id: string;
+   patientId?: number;
+   userId?: number;
+   messages: Array<{ role: string; content: string; timestamp?: string }>;
+   createdAt?: string;
+   updatedAt?: string;
+   messageCount?: number;
+ }>>([]);
+ const [selectedConversation, setSelectedConversation] = useState<{
+   id: string;
+   summary: string;
+   highlights: string[];
+ } | null>(null);
+ const [loadingSummary, setLoadingSummary] = useState(false);
  const [typedText, setTypedText] = useState("");
  const [isTyping, setIsTyping] = useState(false);
  const [typingPos, setTypingPos] = useState(0);
@@ -1084,6 +1148,36 @@ if (!MEDICO_ID) {
     );
   }
 }
+
+ // Función para manejar click en una conversación
+ const handleConversationClick = async (conversationId: string) => {
+   // Validar que el ID sea un string válido y no esté vacío
+   if (!conversationId || conversationId.trim() === "" || conversationId === "{id}") {
+     console.error("❌ ID de conversación inválido:", conversationId);
+     toast.error("ID de conversación inválido");
+     return;
+   }
+   
+   console.log(`🔍 Obteniendo resumen para conversación: ${conversationId}`);
+   setLoadingSummary(true);
+   try {
+     const summaryResult = await api.patient.getConversationSummary(conversationId);
+     if (summaryResult) {
+       setSelectedConversation({
+         id: conversationId,
+         summary: summaryResult.summary || "No se pudo generar resumen.",
+         highlights: summaryResult.highlights || []
+       });
+     } else {
+       toast.error("No se pudo obtener el resumen de la conversación");
+     }
+   } catch (error: any) {
+     console.error("Error obteniendo resumen:", error);
+     toast.error(error?.message || "Error al obtener el resumen de la conversación");
+   } finally {
+     setLoadingSummary(false);
+   }
+ };
 
  // Handlers "Guardar/Imprimir"
  const onSave = async () => {
@@ -1705,44 +1799,121 @@ const assignDisabled = assigningPatient || unassigningPatient || patientLoading 
  <div className={`tabpanel ${activeTab === "general" ? "active" : ""}`} id="tab-general">
  <div className="grid-2">
  <div className="subcard">
- <h3>Condiciones</h3>
- <table className="table" aria-label="Tabla de condiciones">
- <thead>
- <tr>
- <th>Condition</th>
- <th>Status</th>
- <th>Severity</th>
- <th>Fecha Dx</th>
- </tr>
- </thead>
- <tbody id="tbodyCondiciones">
- <tr>
- <td>Z88.0 · Alergia a penicilina</td>
- <td className="muted">unchanged</td>
- <td>Severe</td>
- <td>1991-07-01</td>
- </tr>
- <tr>
- <td>E10 · Diabetes tipo 1</td>
- <td className="muted">chronic</td>
- <td>Moderate</td>
- <td>1993-10-11</td>
- </tr>
- <tr>
- <td>A90 · Dengue clásico</td>
- <td className="muted">acute</td>
- <td>Mild</td>
- <td>—</td>
- </tr>
- </tbody>
- </table>
+ <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+   <h3 style={{ margin: 0 }}>Condiciones</h3>
+   <button
+     onClick={() => setShowAddConditionModal(true)}
+     style={{
+       padding: '6px 12px',
+       background: '#52e5ff',
+       color: '#0b1220',
+       border: 'none',
+       borderRadius: '4px',
+       cursor: 'pointer',
+       fontSize: '13px',
+       fontWeight: '500'
+     }}
+   >
+     + Agregar condición
+   </button>
+ </div>
+ {state.DIAGNOSTICOS.length > 0 ? (
+   <table className="table" aria-label="Tabla de condiciones">
+     <thead>
+       <tr>
+         <th>Condition</th>
+         <th>Status</th>
+         <th>Severity</th>
+         <th>Fecha Dx</th>
+       </tr>
+     </thead>
+     <tbody id="tbodyCondiciones">
+       {state.DIAGNOSTICOS.map((diagnostico) => {
+         // Determinar status basado en fecha y si es principal
+         const fechaDx = diagnostico.fecha_diagnostico ? new Date(diagnostico.fecha_diagnostico) : null;
+         const hoy = new Date();
+         const diasDesdeDx = fechaDx ? Math.floor((hoy.getTime() - fechaDx.getTime()) / (1000 * 60 * 60 * 24)) : null;
+         
+         // Determinar status: chronic (>90 días), active (30-90 días), acute (<30 días), unchanged (sin fecha o muy antiguo)
+         let status = "unknown";
+         const codigo = diagnostico.codigo_icd10?.toUpperCase() || "";
+         
+         if (fechaDx && diasDesdeDx !== null) {
+           if (diasDesdeDx < 30) {
+             status = "acute";
+           } else if (diasDesdeDx <= 90) {
+             status = diagnostico.es_principal ? "active" : "unchanged";
+           } else {
+             // Códigos Z (factores de riesgo) y E (endocrinos) suelen ser crónicos
+             if (codigo.startsWith("Z") || codigo.startsWith("E")) {
+               status = "chronic";
+             } else {
+               status = diagnostico.es_principal ? "chronic" : "unchanged";
+             }
+           }
+         } else {
+           status = diagnostico.es_principal ? "active" : "unchanged";
+         }
+         
+         // Determinar severity basado en el código ICD10 y tipo de condición
+         let severity = "Mild";
+         if (codigo.startsWith("Z")) {
+           // Factores de riesgo - generalmente Mild, pero alergias pueden ser Severe
+           severity = codigo.includes("88") || codigo.includes("91") ? "Severe" : "Mild";
+         } else if (codigo.startsWith("E")) {
+           // Endocrinos - Moderate si es principal
+           severity = diagnostico.es_principal ? "Moderate" : "Mild";
+         } else if (codigo.startsWith("A") || codigo.startsWith("B")) {
+           // Infecciosas - Moderate si es principal, Mild si no
+           severity = diagnostico.es_principal ? "Moderate" : "Mild";
+         } else if (codigo.startsWith("I") || codigo.startsWith("J")) {
+           // Cardiovasculares y respiratorias - generalmente Severe
+           severity = "Severe";
+         } else if (codigo.startsWith("C")) {
+           // Neoplasias - Severe
+           severity = "Severe";
+         } else {
+           severity = diagnostico.es_principal ? "Moderate" : "Mild";
+         }
+         
+         return (
+           <tr key={diagnostico.id}>
+             <td>
+               {diagnostico.codigo_icd10 ? `${diagnostico.codigo_icd10} · ` : ""}
+               {diagnostico.descripcion || diagnostico.motivo || "Sin descripción"}
+             </td>
+             <td className="muted">{status}</td>
+             <td>{severity}</td>
+             <td>
+               {fechaDx 
+                 ? fechaDx.toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                 : "—"}
+             </td>
+           </tr>
+         );
+       })}
+     </tbody>
+   </table>
+ ) : (
+   <div className="muted" style={{ padding: '16px', textAlign: 'center' }}>
+     No hay condiciones registradas para este paciente
+   </div>
+ )}
  </div>
 
  <div className="subcard">
  <h3>Notas rápidas</h3>
  <textarea id="txtNotes" placeholder="Evolución, observaciones, laboratorios, etc." />
  <div className="muted" style={{ marginTop: 8 }}>
- GP: Cordara, Cameron · Family: Zenon-Betz · Insurer: 938291
+   {state.CATALOGOS.MEDICO.find((x) => x.id === state.PACIENTE.id_medico_gen)?.nombre 
+     ? `GP: ${state.CATALOGOS.MEDICO.find((x) => x.id === state.PACIENTE.id_medico_gen)?.nombre}`
+     : "GP: No asignado"}
+   {state.PACIENTE.nombre || state.PACIENTE.apellido 
+     ? ` · Paciente: ${state.PACIENTE.nombre} ${state.PACIENTE.apellido}`.trim()
+     : ""}
+   {state.PACIENTE.id_tipo_sangre && state.CATALOGOS.TIPO_SANGRE.find((x) => x.id === state.PACIENTE.id_tipo_sangre)
+     ? ` · Tipo sangre: ${state.CATALOGOS.TIPO_SANGRE.find((x) => x.id === state.PACIENTE.id_tipo_sangre)?.nombre}`
+     : ""}
  </div>
  </div>
  </div>
@@ -1977,32 +2148,148 @@ const assignDisabled = assigningPatient || unassigningPatient || patientLoading 
  {/* AVATAR / CLÍNICA */}
  <div className={`tabpanel ${activeTab === "avatar" ? "active" : ""}`} id="tab-avatar">
  <div className="subcard">
- <h3>SESION_AVATAR</h3>
- <table className="table" id="tblSesiones">
- <thead>
- <tr>
- <th>id</th>
- <th>usuario</th>
- <th>paciente</th>
- <th>medico</th>
- <th>inicio</th>
- <th>fin</th>
- </tr>
- </thead>
- <tbody>
- {state.SESION_AVATAR.map((sRow) => (
- <tr key={sRow.id}>
- <td>{sRow.id}</td>
- <td>{sRow.id_usuario}</td>
- <td>{sRow.id_paciente}</td>
- <td>{sRow.id_medico}</td>
- <td>{fmt(sRow.fecha_inicio)}</td>
- <td>{sRow.fecha_fin ? fmt(sRow.fecha_fin) : "—"}</td>
- </tr>
- ))}
- </tbody>
- </table>
+ <h3>Sesiones con el Avatar (Últimas {conversations.length})</h3>
+ {conversations.length > 0 ? (
+   <table className="table" id="tblSesiones">
+     <thead>
+       <tr>
+         <th>Fecha</th>
+         <th>Mensajes</th>
+         <th>Última actualización</th>
+       </tr>
+     </thead>
+     <tbody>
+       {conversations.map((conv) => {
+         const date = conv.updatedAt || conv.createdAt;
+         const dateObj = date ? new Date(date) : null;
+         return (
+           <tr 
+             key={conv.id}
+             onClick={() => handleConversationClick(conv.id)}
+             style={{
+               cursor: 'pointer',
+               transition: 'background-color 0.2s'
+             }}
+             onMouseEnter={(e) => {
+               e.currentTarget.style.backgroundColor = '#1f2a3e';
+             }}
+             onMouseLeave={(e) => {
+               e.currentTarget.style.backgroundColor = 'transparent';
+             }}
+           >
+             <td>
+               {dateObj 
+                 ? dateObj.toLocaleDateString('es-ES', { 
+                     year: 'numeric', 
+                     month: '2-digit', 
+                     day: '2-digit',
+                     hour: '2-digit',
+                     minute: '2-digit'
+                   })
+                 : "—"}
+             </td>
+             <td>{conv.messageCount || conv.messages?.length || 0}</td>
+             <td>
+               {dateObj 
+                 ? dateObj.toLocaleDateString('es-ES', { 
+                     year: 'numeric', 
+                     month: '2-digit', 
+                     day: '2-digit',
+                     hour: '2-digit',
+                     minute: '2-digit'
+                   })
+                 : "—"}
+             </td>
+           </tr>
+         );
+       })}
+     </tbody>
+   </table>
+ ) : (
+   <div className="muted" style={{ padding: '16px', textAlign: 'center' }}>
+     No hay sesiones registradas con el avatar para este paciente
+   </div>
+ )}
  </div>
+
+ {/* Modal para mostrar resumen de conversación */}
+ {selectedConversation && (
+   <div
+     style={{
+       position: 'fixed',
+       top: 0,
+       left: 0,
+       right: 0,
+       bottom: 0,
+       background: 'rgba(0, 0, 0, 0.6)',
+       display: 'flex',
+       justifyContent: 'center',
+       alignItems: 'center',
+       zIndex: 10000
+     }}
+     onClick={() => setSelectedConversation(null)}
+   >
+     <div
+       style={{
+         background: '#1a2236',
+         padding: '24px',
+         borderRadius: '8px',
+         width: '90%',
+         maxWidth: '600px',
+         maxHeight: '80vh',
+         overflowY: 'auto',
+         border: '1px solid #344'
+       }}
+       onClick={(e) => e.stopPropagation()}
+     >
+       <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#fff' }}>
+         Resumen de Sesión
+       </h3>
+       
+       <div style={{ marginBottom: '20px' }}>
+         <h4 style={{ color: '#52e5ff', marginBottom: '10px', fontSize: '16px' }}>
+           Resumen
+         </h4>
+         <p style={{ color: '#ccc', lineHeight: '1.6', fontSize: '14px' }}>
+           {selectedConversation.summary}
+         </p>
+       </div>
+
+       {selectedConversation.highlights.length > 0 && (
+         <div>
+           <h4 style={{ color: '#52e5ff', marginBottom: '10px', fontSize: '16px' }}>
+             Puntos Destacados
+           </h4>
+           <ul style={{ color: '#ccc', lineHeight: '1.8', fontSize: '14px', paddingLeft: '20px' }}>
+             {selectedConversation.highlights.map((highlight, index) => (
+               <li key={index} style={{ marginBottom: '8px' }}>
+                 {highlight}
+               </li>
+             ))}
+           </ul>
+         </div>
+       )}
+
+       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+         <button
+           onClick={() => setSelectedConversation(null)}
+           style={{
+             padding: '8px 16px',
+             background: '#52e5ff',
+             border: 'none',
+             borderRadius: '4px',
+             color: '#0b1220',
+             cursor: 'pointer',
+             fontSize: '14px',
+             fontWeight: '500'
+           }}
+         >
+           Cerrar
+         </button>
+       </div>
+     </div>
+   </div>
+ )}
 
  <div className="subcard" style={{ marginTop: 12 }}>
  <h3>CLINICA</h3>

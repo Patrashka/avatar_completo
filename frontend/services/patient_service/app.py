@@ -23,6 +23,7 @@ try:
         get_patient_photo,
         update_consultation,
         update_patient,
+        create_diagnosis,
         warmup_postgres_connection,
     )
     DB_AVAILABLE = True
@@ -141,6 +142,44 @@ def consultation_update(consultation_id: int):
 
     update_consultation(consultation_id, data)
     return jsonify({"success": True, "message": "Consulta actualizada correctamente"}), 200
+
+
+@app.post("/api/db/patient/<int:patient_id>/diagnoses")
+def create_patient_diagnosis(patient_id: int):
+    """
+    Crea un nuevo diagnóstico para un paciente.
+    Requiere id_episodio, y opcionalmente codigo_icd10, descripcion, es_principal.
+    """
+    if not DB_AVAILABLE:
+        return jsonify({"error": DB_ERROR}), 503
+
+    data: Dict[str, Any] = request.get_json() or {}
+    
+    id_episodio = data.get("id_episodio")
+    if not id_episodio:
+        return jsonify({"error": "id_episodio es requerido"}), 400
+
+    codigo_icd10 = data.get("codigo_icd10", "").strip() or None
+    descripcion = data.get("descripcion", "").strip() or None
+    es_principal = data.get("es_principal", False)
+    
+    if not descripcion and not codigo_icd10:
+        return jsonify({"error": "Debe proporcionar al menos codigo_icd10 o descripcion"}), 400
+
+    try:
+        diagnosis_id = create_diagnosis(
+            id_episodio=int(id_episodio),
+            codigo_icd10=codigo_icd10,
+            descripcion=descripcion,
+            es_principal=bool(es_principal)
+        )
+        return jsonify({
+            "success": True,
+            "message": "Diagnóstico creado correctamente",
+            "id": diagnosis_id
+        }), 201
+    except Exception as e:
+        return jsonify({"error": f"Error al crear diagnóstico: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

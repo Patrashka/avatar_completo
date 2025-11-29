@@ -346,6 +346,35 @@ def get_patient_diagnoses(patient_id: int) -> List[Dict]:
     query = "SELECT * FROM get_patient_diagnoses_sp(%s)"
     return execute_query(query, (patient_id,))
 
+def create_diagnosis(
+    id_episodio: int,
+    codigo_icd10: str = None,
+    descripcion: str = None,
+    es_principal: bool = False
+) -> int:
+    """
+    Crea un nuevo diagnóstico en la base de datos
+    
+    Args:
+        id_episodio: ID del episodio médico asociado
+        codigo_icd10: Código ICD10 (opcional)
+        descripcion: Descripción del diagnóstico
+        es_principal: Si es el diagnóstico principal
+    
+    Returns:
+        ID del diagnóstico creado
+    """
+    query = """
+        INSERT INTO DIAGNOSTICO (id_episodio, codigo_icd10, descripcion, es_principal)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id
+    """
+    result = execute_one(query, (id_episodio, codigo_icd10, descripcion, es_principal))
+    if result:
+        logger.info(f"💾 Diagnóstico creado: {result.get('id')}")
+        return result.get('id')
+    raise Exception("No se pudo crear el diagnóstico")
+
 def get_patient_consultations(patient_id: int, limit: int = 10) -> List[Dict]:
     """Obtiene las consultas de un paciente usando stored procedure"""
     query = "SELECT * FROM get_patient_consultations_sp(%s, %s)"
