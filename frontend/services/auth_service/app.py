@@ -15,7 +15,7 @@ DB_ERROR = "Base de datos no disponible"
 DB_WARNING = None
 
 try:
-    from db_connection import authenticate_user, warmup_postgres_connection  # noqa: E402
+    from db_connection import authenticate_user, register_patient, warmup_postgres_connection  # noqa: E402
     DB_AVAILABLE = True
     try:
         warmup_postgres_connection()
@@ -118,6 +118,53 @@ def login():
     except Exception as exc:  # pragma: no cover - logging en stdout
         app.logger.exception("Error en login")
         return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/register")
+@app.post("/api/auth/register")
+def register():
+    """Registra un nuevo paciente en el sistema"""
+    if not DB_AVAILABLE:
+        return jsonify({"error": DB_ERROR}), 503
+
+    try:
+        payload = request.get_json() or {}
+        username = (payload.get("username") or "").strip()
+        password = payload.get("password") or ""
+        correo = (payload.get("correo") or "").strip()
+        nombre = (payload.get("nombre") or "").strip()
+        apellido = (payload.get("apellido") or "").strip()
+        telefono = (payload.get("telefono") or "").strip()
+
+        if not username or not password or not correo:
+            return jsonify({"error": "Username, contraseña y correo son requeridos"}), 400
+
+        # Validar formato de correo básico (simulado, no se verifica realmente)
+        if "@" not in correo or "." not in correo.split("@")[1]:
+            return jsonify({"error": "Formato de correo inválido"}), 400
+
+        # Registrar paciente
+        user = register_patient(
+            username=username,
+            password=password,
+            correo=correo,
+            nombre=nombre,
+            apellido=apellido,
+            telefono=telefono
+        )
+
+        if not user:
+            return jsonify({"error": "El usuario o correo ya existe"}), 409
+
+        return jsonify({
+            "success": True,
+            "message": "Usuario registrado exitosamente",
+            "user": user
+        }), 201
+
+    except Exception as exc:  # pragma: no cover - logging en stdout
+        app.logger.exception("Error en registro")
+        return jsonify({"error": f"Error al registrar usuario: {str(exc)}"}), 500
 
 
 if __name__ == "__main__":

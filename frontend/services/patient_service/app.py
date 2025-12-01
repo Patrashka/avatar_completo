@@ -87,8 +87,20 @@ def patient_consultations(patient_id: int):
     if not DB_AVAILABLE:
         return jsonify({"error": DB_ERROR}), 503
 
-    consultations = get_patient_consultations(patient_id) or []
-    return jsonify(consultations), 200
+    try:
+        app.logger.info(f"Obteniendo consultas para paciente {patient_id}")
+        consultations = get_patient_consultations(patient_id) or []
+        app.logger.info(f"Se encontraron {len(consultations)} consultas para paciente {patient_id}")
+        return jsonify(consultations), 200
+    except Exception as e:
+        error_msg = str(e)
+        app.logger.exception(f"Error obteniendo consultas del paciente {patient_id}: {error_msg}")
+        # Retornar error más descriptivo
+        return jsonify({
+            "error": f"Error al obtener consultas del paciente {patient_id}",
+            "details": error_msg,
+            "patient_id": patient_id
+        }), 500
 
 
 @app.get("/api/db/patient/<int:patient_id>/files")
@@ -96,8 +108,13 @@ def patient_files(patient_id: int):
     if not DB_AVAILABLE:
         return jsonify({"error": DB_ERROR}), 503
 
-    files = get_patient_files(patient_id) or []
-    return jsonify(files), 200
+    try:
+        files = get_patient_files(patient_id) or []
+        return jsonify(files), 200
+    except Exception as e:
+        app.logger.exception(f"Error obteniendo archivos del paciente {patient_id}: {e}")
+        # Retornar lista vacía en lugar de error para no bloquear la UI
+        return jsonify([]), 200
 
 
 @app.get("/api/db/patient/<int:patient_id>/diagnoses")

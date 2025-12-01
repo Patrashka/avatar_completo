@@ -304,13 +304,14 @@ CREATE INDEX idx_interaccion_ia_fecha ON AUDITORIA(fecha_hora DESC);
 -- DATOS DE EJEMPLO
 -- ===========================================
 
-BEGIN;
+-- Nota: Los INSERT con ON CONFLICT permiten re-ejecutar el script sin errores
 
 -- ROLES
 INSERT INTO ROL (id, nombre) VALUES
 (1, 'Administrador'),
 (2, 'Médico'),
-(3, 'Paciente');
+(3, 'Paciente')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- ESPECIALIDADES
 INSERT INTO ESPECIALIDAD (id, nombre) VALUES
@@ -328,12 +329,14 @@ INSERT INTO ESPECIALIDAD (id, nombre) VALUES
 (12, 'Urología'),
 (13, 'Oftalmología'),
 (14, 'Psiquiatría'),
-(15, 'Rehabilitación');
+(15, 'Rehabilitación')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- TIPOS DE SANGRE
 INSERT INTO TIPO_SANGRE (id, tipo) VALUES
 (1, 'A+'), (2, 'A-'), (3, 'B+'), (4, 'B-'),
-(5, 'AB+'), (6, 'AB-'), (7, 'O+'), (8, 'O-');
+(5, 'AB+'), (6, 'AB-'), (7, 'O+'), (8, 'O-')
+ON CONFLICT (id) DO UPDATE SET tipo = EXCLUDED.tipo;
 
 -- OCUPACIONES
 INSERT INTO OCUPACION (id, nombre) VALUES
@@ -344,14 +347,16 @@ INSERT INTO OCUPACION (id, nombre) VALUES
 (5, 'Contador'),
 (6, 'Diseñador'),
 (7, 'Docente'),
-(8, 'Empresario');
+(8, 'Empresario')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- ESTADOS CIVILES
 INSERT INTO ESTADO_CIVIL (id, nombre) VALUES
 (1, 'Soltero'),
 (2, 'Casado'),
 (3, 'Divorciado'),
-(4, 'Viudo');
+(4, 'Viudo')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- ESTADOS DE CITA
 INSERT INTO ESTADO_CITA (id, nombre) VALUES
@@ -359,27 +364,31 @@ INSERT INTO ESTADO_CITA (id, nombre) VALUES
 (2, 'Confirmada'),
 (3, 'En curso'),
 (4, 'Completada'),
-(5, 'Cancelada');
+(5, 'Cancelada')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- TIPOS DE CITA
 INSERT INTO TIPO_CITA (id, nombre) VALUES
 (1, 'General'),
 (2, 'Urgencia'),
 (3, 'Seguimiento'),
-(4, 'Control');
+(4, 'Control')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- ESTADOS DE CONSULTA
 INSERT INTO ESTADO_CONSULTA (id, nombre) VALUES
 (1, 'En curso'),
 (2, 'Cerrada'),
-(3, 'Cancelada');
+(3, 'Cancelada')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- ESTADOS DE CÓDIGO
 INSERT INTO ESTADO_CODIGO (id, nombre) VALUES
 (1, 'Emitido'),
 (2, 'Usado'),
 (3, 'Expirado'),
-(4, 'Anulado');
+(4, 'Anulado')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- ASEGURADORAS
 INSERT INTO ASEGURADORA (id, nombre, telefono, correo) VALUES
@@ -387,25 +396,29 @@ INSERT INTO ASEGURADORA (id, nombre, telefono, correo) VALUES
 (2, 'ProtecSalud', '800 111 0002', 'contacto@protecsalud.mx'),
 (3, 'SaludPlus', '800 111 0003', 'contacto@saludplus.mx'),
 (4, 'MediCare MX', '800 111 0004', 'contacto@medicare.mx'),
-(5, 'Seguros Integral', '800 111 0005', 'contacto@segurosintegral.mx');
+(5, 'Seguros Integral', '800 111 0005', 'contacto@segurosintegral.mx')
+ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre, telefono = EXCLUDED.telefono, correo = EXCLUDED.correo;
 
 -- MÉDICOS DE EJEMPLO
 INSERT INTO MEDICO (id, nombre, cedula, id_especialidad, telefono, correo, ubicacion, descripcion) VALUES
 (1, 'Dr. Cameron Cordara', 'MX12345001', 1, '+52 81 5555 1001', 'cameron.cordara@clinica.mx', 'Monterrey, NL', 'Internista enfocada en crónicos.'),
 (2, 'Dra. Sofía Hernández', 'MX12345002', 1, '+52 81 5555 1002', 'sofia.hernandez@clinica.mx', 'Monterrey, NL', 'Internista con experiencia en diabetes.'),
-(3, 'Dr. Luis Martínez', 'MX12345003', 2, '+52 55 5000 2211', 'luis.martinez@cardio.mx', 'CDMX', 'Cardiólogo clínico.');
+(3, 'Dr. Luis Martínez', 'MX12345003', 2, '+52 55 5000 2211', 'luis.martinez@cardio.mx', 'CDMX', 'Cardiólogo clínico.')
+ON CONFLICT (id) DO NOTHING;
 
 -- PACIENTES DE EJEMPLO
 INSERT INTO PACIENTE (id, nombre, fecha_nacimiento, sexo, altura, peso, estilo_vida, alergias, id_tipo_sangre, id_ocupacion, id_estado_civil, id_medico_gen, telefono, correo, direccion) VALUES
 (1, 'Ana Betz', '1985-10-04', 'Femenino', 165.0, 58.5, 'Activo', 'Penicilina', 1, 2, 2, 1, '+52 81 5555 1234', 'ana.betz@example.com', 'Calle Salud #221, Monterrey'),
-(2, 'Juan Pérez', '1980-05-15', 'Masculino', 175.0, 82.5, 'Activo', 'N/A', 7, 2, 2, 1, '+52 81 7777 3001', 'juan.perez@example.com', 'San Pedro, NL');
+(2, 'Juan Pérez', '1980-05-15', 'Masculino', 175.0, 82.5, 'Activo', 'N/A', 7, 2, 2, 1, '+52 81 7777 3001', 'juan.perez@example.com', 'San Pedro, NL')
+ON CONFLICT (id) DO NOTHING;
 
 -- CONSULTAS DE EJEMPLO
 INSERT INTO CONSULTA (id, id_paciente, id_medico, fecha_hora, narrativa, id_estado_consulta, diagnostico_final) VALUES
 (1, 1, 1, NOW() - INTERVAL '5 days', 'Paciente refiere fiebre y mialgias de 48h. Signos vitales estables.', 2, 'Dengue clásico'),
-(2, 1, 1, NOW() - INTERVAL '2 days', 'Control de seguimiento. Paciente evoluciona favorablemente.', 1, NULL);
+(2, 1, 1, NOW() - INTERVAL '2 days', 'Control de seguimiento. Paciente evoluciona favorablemente.', 1, NULL)
+ON CONFLICT (id) DO NOTHING;
 
-COMMIT;
+-- COMMIT removido - los INSERT con ON CONFLICT no requieren transacción explícita
 
 -- Alinear secuencias
 SELECT setval(pg_get_serial_sequence('ROL','id'), (SELECT MAX(id) FROM ROL));

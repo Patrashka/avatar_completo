@@ -227,9 +227,16 @@ export default function PatientView() {
   });
   const [savingGeneral, setSavingGeneral] = useState(false);
 
+  // Modal de datos faltantes
+  const [showMissingDataModal, setShowMissingDataModal] = useState(false);
+  const [missingDataForm, setMissingDataForm] = useState<Partial<State["PACIENTE"]>>({});
+  const [savingMissingData, setSavingMissingData] = useState(false);
+
   // D-ID Agents API Configuration
-  const DID_API_KEY = import.meta.env.VITE_DID_API_KEY || "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb";
-  const DID_API_URL = import.meta.env.VITE_DID_API_URL || "https://api.d-id.com";
+  // NOTA: Ahora usamos el proxy del backend para evitar problemas de CORS
+  // La API key de D-ID debe estar configurada en el backend (.env), no en el frontend
+  const DEFAULT_API = import.meta.env.VITE_API || "http://localhost:8080";
+  const DID_API_URL = `${DEFAULT_API}/api/did`; // Proxy del backend
   const DID_API_SERVICE = import.meta.env.VITE_DID_API_SERVICE || "talks";
   const OPENAI_API_KEY_ENV = import.meta.env.VITE_OPENAI_API_KEY;
   // URL de la imagen del avatar (puede ser una URL pública o una imagen subida a D-ID)
@@ -257,10 +264,10 @@ export default function PatientView() {
   const pacienteNombreRef = useRef<string>("");
   const [previewFile, setPreviewFile] = useState<Archivo | null>(null);
 
-
-  const DEFAULT_API = import.meta.env.VITE_API || "http://localhost:8080";
+  // API endpoints (DEFAULT_API ya está declarado arriba en la configuración de D-ID)
   const AI_API = import.meta.env.VITE_AI_API || DEFAULT_API;
   const AUTH_API = import.meta.env.VITE_AUTH_API || DEFAULT_API;
+  const PATIENT_API = import.meta.env.VITE_PATIENT_API || DEFAULT_API;
   // El endpoint de conversaciones está en el backend principal (puerto 8080), no en ai_service
   const conversationEndpoint = useMemo(
     () => `${DEFAULT_API}/api/did/conversations`,
@@ -285,7 +292,8 @@ export default function PatientView() {
   const loadPatientPhoto = async () => {
     if (!PATIENT_ID) return;
     try {
-      const response = await fetch(`${AUTH_API}/api/auth/patient/${PATIENT_ID}/photo`);
+      // Usar el servicio de pacientes, no el de autenticación
+      const response = await fetch(`${PATIENT_API || DEFAULT_API}/api/db/patient/${PATIENT_ID}/photo`);
       if (response.ok) {
         const data = await response.json();
         if (data.photo_url) {
@@ -417,6 +425,134 @@ export default function PatientView() {
       toast.error("Error al cargar datos del paciente");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Verificar datos faltantes después de cargar
+  useEffect(() => {
+    if (!loading && PATIENT_ID && state.PACIENTE.id > 0) {
+      // Pequeño delay para asegurar que el estado se haya actualizado
+      const timer = setTimeout(() => {
+        // Solo verificar si el modal no está abierto (para evitar múltiples verificaciones)
+        if (!showMissingDataModal) {
+          checkMissingData();
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, PATIENT_ID, state.PACIENTE.id]);
+
+  // Función para detectar campos faltantes
+  const checkMissingData = () => {
+    const paciente = state.PACIENTE;
+    const missingFields: Partial<State["PACIENTE"]> = {};
+    
+    // Campos importantes que deberían estar completos
+    if (!paciente.nombre || paciente.nombre.trim() === "") {
+      missingFields.nombre = "";
+    }
+    if (!paciente.apellido || paciente.apellido.trim() === "") {
+      missingFields.apellido = "";
+    }
+    if (!paciente.fecha_nacimiento || paciente.fecha_nacimiento.trim() === "") {
+      missingFields.fecha_nacimiento = "";
+    }
+    if (!paciente.sexo || paciente.sexo.trim() === "") {
+      missingFields.sexo = "";
+    }
+    if (!paciente.altura || paciente.altura.trim() === "") {
+      missingFields.altura = "";
+    }
+    if (!paciente.peso || paciente.peso.trim() === "") {
+      missingFields.peso = "";
+    }
+    if (!paciente.id_tipo_sangre || paciente.id_tipo_sangre === 0) {
+      missingFields.id_tipo_sangre = 0;
+    }
+    if (!paciente.id_ocupacion || paciente.id_ocupacion === 0) {
+      missingFields.id_ocupacion = 0;
+    }
+    if (!paciente.id_estado_civil || paciente.id_estado_civil === 0) {
+      missingFields.id_estado_civil = 0;
+    }
+    if (!paciente.estilo_vida || paciente.estilo_vida.trim() === "") {
+      missingFields.estilo_vida = "";
+    }
+    
+    // Si hay campos faltantes, mostrar el modal
+    if (Object.keys(missingFields).length > 0) {
+      setMissingDataForm(missingFields);
+      setShowMissingDataModal(true);
+    }
+  };
+
+  // Función para guardar datos faltantes
+  const handleSaveMissingData = async () => {
+    if (!PATIENT_ID) {
+      toast.error("No hay paciente seleccionado");
+      return;
+    }
+
+    setSavingMissingData(true);
+    try {
+      const payload: any = {
+        nombre: missingDataForm.nombre !== undefined ? missingDataForm.nombre : state.PACIENTE.nombre,
+        apellido: missingDataForm.apellido !== undefined ? missingDataForm.apellido : state.PACIENTE.apellido,
+        fecha_nacimiento: missingDataForm.fecha_nacimiento !== undefined ? missingDataForm.fecha_nacimiento : state.PACIENTE.fecha_nacimiento,
+        sexo: missingDataForm.sexo !== undefined ? missingDataForm.sexo : state.PACIENTE.sexo,
+        altura: missingDataForm.altura !== undefined && missingDataForm.altura.trim() !== "" ? missingDataForm.altura : state.PACIENTE.altura,
+        peso: missingDataForm.peso !== undefined && missingDataForm.peso.trim() !== "" ? missingDataForm.peso : state.PACIENTE.peso,
+        estilo_vida: missingDataForm.estilo_vida !== undefined ? missingDataForm.estilo_vida : state.PACIENTE.estilo_vida,
+        id_tipo_sangre: missingDataForm.id_tipo_sangre !== undefined && missingDataForm.id_tipo_sangre !== 0 ? missingDataForm.id_tipo_sangre : state.PACIENTE.id_tipo_sangre,
+        id_ocupacion: missingDataForm.id_ocupacion !== undefined && missingDataForm.id_ocupacion !== 0 ? missingDataForm.id_ocupacion : state.PACIENTE.id_ocupacion,
+        id_estado_civil: missingDataForm.id_estado_civil !== undefined && missingDataForm.id_estado_civil !== 0 ? missingDataForm.id_estado_civil : state.PACIENTE.id_estado_civil,
+        id_medico_gen: state.PACIENTE.id_medico_gen || null,
+      };
+
+      const result = await api.patient.updatePatient(PATIENT_ID, payload);
+      if (!result || result.success === false) {
+        throw new Error(result?.error || "No se pudo actualizar la información");
+      }
+
+      // Actualizar el estado local
+      setState((prev) => ({
+        ...prev,
+        PACIENTE: {
+          ...prev.PACIENTE,
+          nombre: payload.nombre || prev.PACIENTE.nombre,
+          apellido: payload.apellido || prev.PACIENTE.apellido,
+          fecha_nacimiento: payload.fecha_nacimiento || prev.PACIENTE.fecha_nacimiento,
+          sexo: payload.sexo || prev.PACIENTE.sexo,
+          altura: payload.altura || prev.PACIENTE.altura,
+          peso: payload.peso || prev.PACIENTE.peso,
+          estilo_vida: payload.estilo_vida || prev.PACIENTE.estilo_vida,
+          id_tipo_sangre: payload.id_tipo_sangre || prev.PACIENTE.id_tipo_sangre,
+          id_ocupacion: payload.id_ocupacion || prev.PACIENTE.id_ocupacion,
+          id_estado_civil: payload.id_estado_civil || prev.PACIENTE.id_estado_civil,
+        },
+      }));
+
+      // Actualizar información del usuario
+      const nombreCompleto = `${payload.nombre || state.PACIENTE.nombre} ${payload.apellido || state.PACIENTE.apellido}`.trim();
+      pacienteNombreRef.current = payload.nombre || state.PACIENTE.nombre || "";
+      setUserInfo(prev => ({
+        ...prev,
+        paciente_nombre: nombreCompleto
+      }));
+
+      toast.success("Datos guardados correctamente");
+      setShowMissingDataModal(false);
+      setMissingDataForm({});
+      
+      // Verificar si aún hay datos faltantes
+      setTimeout(() => {
+        checkMissingData();
+      }, 500);
+    } catch (error: any) {
+      console.error("Error guardando datos faltantes:", error);
+      toast.error(error?.message || "Error al guardar los datos");
+    } finally {
+      setSavingMissingData(false);
     }
   };
 
@@ -572,8 +708,10 @@ export default function PatientView() {
   const createDIDAgent = useCallback(async () => {
     try {
       // Verificar que la API key esté configurada
-      if (!DID_API_KEY || DID_API_KEY === "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb") {
-        const errorMsg = "API Key de D-ID no configurada. Por favor, configura VITE_DID_API_KEY en frontend/.env";
+      // La API key de D-ID ahora se maneja en el backend
+      // Verificar que el backend esté disponible
+      if (!DID_API_URL || DID_API_URL.includes("api.d-id.com")) {
+        const errorMsg = "Backend no configurado correctamente. Verifica VITE_API en frontend/.env";
         console.error(errorMsg);
         toast.error(errorMsg, { id: "agent-creation", duration: 5000 });
         setAvatarStatus("disconnected");
@@ -617,7 +755,6 @@ INSTRUCCIONES CRÍTICAS:
         const knowledgeRes = await fetch(`${DID_API_URL}/knowledge`, {
           method: 'POST',
           headers: {
-            'Authorization': `Basic ${DID_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -638,7 +775,6 @@ INSTRUCCIONES CRÍTICAS:
       }
 
       // 2. Crear agente
-      // Obtener OpenAI API key del backend (si está disponible) para provider custom
       const OPENAI_API_KEY_ENV = import.meta.env.VITE_OPENAI_API_KEY;
       
       const agentBody: any = {
@@ -651,8 +787,12 @@ INSTRUCCIONES CRÍTICAS:
           thumbnail: AVATAR_IMAGE_URL,
           source_url: AVATAR_IMAGE_URL
         },
-        llm: OPENAI_API_KEY_ENV ? {
-          // Si tenemos OpenAI API key, usar provider custom con configuración
+        preview_name: "Asistente Médico"
+      };
+
+      // Configurar LLM: usar OpenAI si hay API key, sino D-ID usará su LLM nativo
+      if (OPENAI_API_KEY_ENV && OPENAI_API_KEY_ENV.trim()) {
+        agentBody.llm = {
           type: "openai",
           provider: "custom",
           model: "gpt-4o-mini",
@@ -662,16 +802,13 @@ INSTRUCCIONES CRÍTICAS:
             api_key: OPENAI_API_KEY_ENV,
             base_url: "https://api.openai.com/v1"
           }
-        } : {
-          // Si no tenemos OpenAI API key, usar modelo nativo de D-ID sin provider custom
-          // Nota: D-ID puede tener modelos nativos, pero si requiere custom, necesitamos la API key
-          type: "openai",
-          model: "gpt-4o-mini",
+        };
+      } else {
+        agentBody.llm = {
           instructions: instructions,
           template: "rag-ungrounded"
-        },
-        preview_name: "Asistente Médico"
-      };
+        };
+      }
 
       // Agregar knowledge solo si se creó exitosamente
       if (knowledgeId) {
@@ -688,7 +825,6 @@ INSTRUCCIONES CRÍTICAS:
       const agentRes = await fetch(`${DID_API_URL}/agents`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${DID_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(agentBody)
@@ -706,7 +842,6 @@ INSTRUCCIONES CRÍTICAS:
       const chatRes = await fetch(`${DID_API_URL}/agents/${agentIdRef.current}/chat`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${DID_API_KEY}`,
           'Content-Type': 'application/json',
         }
       });
@@ -728,14 +863,16 @@ INSTRUCCIONES CRÍTICAS:
       setAvatarStatus("disconnected");
       throw error;
     }
-  }, [DID_API_KEY, DID_API_URL, state.PACIENTE]);
+  }, [DID_API_URL, state.PACIENTE]);
 
   // Conectar a D-ID stream
   const connectDIDStream = useCallback(async () => {
     try {
       // Verificar API key
-      if (!DID_API_KEY || DID_API_KEY === "dmluaWNpby5jYW50dUB1ZGVtLmVkdQ:xSGXERmQ_Iv3I1X6Codcb") {
-        const errorMsg = "API Key de D-ID no configurada. Configura VITE_DID_API_KEY en frontend/.env y reinicia el frontend";
+      // La API key de D-ID ahora se maneja en el backend
+      // Verificar que el backend esté disponible
+      if (!DID_API_URL || DID_API_URL.includes("api.d-id.com")) {
+        const errorMsg = "Backend no configurado correctamente. Verifica VITE_API en frontend/.env y reinicia el frontend";
         console.error(errorMsg);
         toast.error(errorMsg, { id: "connection", duration: 5000 });
         setAvatarStatus("disconnected");
@@ -749,30 +886,50 @@ INSTRUCCIONES CRÍTICAS:
       setAvatarStatus("connecting");
       toast.loading("Conectando con el avatar...", { id: "connection" });
 
-      // Crear stream
+      // Crear stream (puede tardar hasta 2 minutos)
       const streamRes = await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${DID_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           source_url: AVATAR_IMAGE_URL
-        })
+        }),
+        // No establecer timeout en el fetch, dejar que el backend maneje el timeout
       });
 
       if (!streamRes.ok) {
-        const errorText = await streamRes.text();
-        throw new Error(`Error creando stream: ${streamRes.status} - ${errorText}`);
+        let errorText = "";
+        try {
+          const errorData = await streamRes.json();
+          errorText = errorData.error || errorData.message || JSON.stringify(errorData);
+        } catch {
+          errorText = await streamRes.text();
+        }
+        
+        if (streamRes.status === 504) {
+          throw new Error(`Timeout creando stream. D-ID puede estar lento. Intenta de nuevo en unos momentos. Detalles: ${errorText}`);
+        }
+        throw new Error(`Error creando stream (${streamRes.status}): ${errorText}`);
       }
 
       const streamData = await streamRes.json();
       streamIdRef.current = streamData.id;
       sessionIdRef.current = streamData.session_id;
 
-      // Crear peer connection
+      // Crear peer connection (cerrar cualquier conexión anterior primero)
+      if (pcRef.current) {
+        console.log('🛑 Cerrando PeerConnection anterior antes de crear nueva...');
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+      
       const pc = new RTCPeerConnection({ iceServers: streamData.ice_servers || [{ urls: ["stun:stun.l.google.com:19302"] }] });
       pcRef.current = pc;
+      console.log('✅ Nueva PeerConnection creada');
+      
+      // Resetear flag antes de agregar listeners
+      streamAssignedRef.current = false;
 
       // Event listeners
       pc.addEventListener('icegatheringstatechange', () => {
@@ -884,61 +1041,232 @@ INSTRUCCIONES CRÍTICAS:
       });
 
       pc.addEventListener('track', (event) => {
-        console.log('Track recibido:', event.track.kind, 'Stream ID:', event.streams[0]?.id);
+        console.log('📹 Track recibido:', event.track.kind, 'enabled:', event.track.enabled, 'readyState:', event.track.readyState);
         
-        // Solo procesar tracks de video, o el primer stream que llegue
-        if (event.track.kind === 'video' && videoRef.current && event.streams[0] && !streamAssignedRef.current) {
-          console.log('Asignando stream de video:', event.streams[0]);
-          streamAssignedRef.current = true;
+        // Procesar tracks de video
+        if (event.track.kind === 'video' && videoRef.current && event.streams[0]) {
+          // Evitar procesar el mismo track múltiples veces
+          if (streamAssignedRef.current && videoRef.current.srcObject === event.streams[0]) {
+            console.log('⚠️ Track de video ya asignado, ignorando...');
+            return;
+          }
           
-          // Detener cualquier stream anterior
+          console.log('✅ Track de video recibido, asignando al elemento video...');
+          
+          // Detener y limpiar cualquier stream anterior completamente
           if (videoRef.current.srcObject) {
             const oldStream = videoRef.current.srcObject as MediaStream;
             oldStream.getTracks().forEach(track => {
+              console.log('🛑 Deteniendo track anterior:', track.kind);
               track.stop();
-              console.log('Track anterior detenido:', track.kind);
             });
+            videoRef.current.srcObject = null;
+            // Pequeño delay para asegurar limpieza
+            setTimeout(() => {
+              if (videoRef.current) {
+                videoRef.current.load();
+              }
+            }, 100);
           }
           
           // Asignar nuevo stream
           videoRef.current.srcObject = event.streams[0];
-          console.log('Stream asignado, tracks:', event.streams[0].getTracks().map(t => t.kind));
+          console.log('📺 Stream asignado al video, tracks:', event.streams[0].getTracks().map(t => `${t.kind} (${t.enabled ? 'enabled' : 'disabled'})`).join(', '));
+          
+          streamAssignedRef.current = true;
+          
+          // Obtener el track de video y asegurar que esté habilitado
+          const videoTrack = event.track;
+          console.log('🎥 Video track estado inicial:', {
+            enabled: videoTrack.enabled,
+            readyState: videoTrack.readyState,
+            muted: videoTrack.muted,
+            id: videoTrack.id
+          });
+          
+          if (!videoTrack.enabled) {
+            console.log('🔧 Habilitando track de video...');
+            videoTrack.enabled = true;
+          }
+          
+          // Asegurar que el track no esté muteado
+          if (videoTrack.muted) {
+            console.log('🔊 Desmuteando track de video...');
+            // No podemos desmutear directamente, pero podemos verificar
+          }
+          
+          // Escuchar cambios en el estado del track
+          videoTrack.addEventListener('unmute', () => {
+            console.log('🔊 Track de video desmuteado');
+          });
+          
+          videoTrack.addEventListener('ended', () => {
+            console.warn('⚠️ Track de video terminado');
+          });
+          
+          // Asegurar que el video tenga los atributos necesarios
+          if (videoRef.current) {
+            videoRef.current.autoplay = true;
+            videoRef.current.playsInline = true;
+            // IMPORTANTE: Inicialmente muteado para permitir autoplay, luego desmutear
+            videoRef.current.muted = true; // Muteado inicialmente para autoplay
+            
+            // Listeners para asegurar visibilidad cuando el video tenga dimensiones
+            const ensureVisibility = () => {
+              if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+                console.log('✅ Video visible con dimensiones:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+                videoRef.current.style.display = 'block';
+                videoRef.current.style.visibility = 'visible';
+                videoRef.current.style.opacity = '1';
+                // Desmutear cuando tenga dimensiones
+                if (videoRef.current.muted) {
+                  console.log('🔊 Desmuteando elemento video...');
+                  videoRef.current.muted = false;
+                }
+              }
+            };
+            
+            videoRef.current.addEventListener('loadedmetadata', () => {
+              console.log('📊 Metadata cargada, dimensiones:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+              ensureVisibility();
+              videoRef.current?.play().catch(err => {
+                console.warn('⚠️ Error en play (metadata):', err);
+                // Reintentar después de un delay
+                setTimeout(() => {
+                  videoRef.current?.play().catch(console.warn);
+                }, 500);
+              });
+            }, { once: true });
+            
+            videoRef.current.addEventListener('loadeddata', () => {
+              console.log('📊 Data cargada, dimensiones:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+              ensureVisibility();
+            }, { once: true });
+            
+            videoRef.current.addEventListener('canplay', () => {
+              console.log('▶️ Can play, dimensiones:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+              ensureVisibility();
+              if (videoRef.current && videoRef.current.paused) {
+                videoRef.current.play().catch(console.warn);
+              }
+            }, { once: true });
+            
+            videoRef.current.addEventListener('playing', () => {
+              console.log('▶️ Video reproduciendo, dimensiones:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+              ensureVisibility();
+            }, { once: true });
+            
+            videoRef.current.addEventListener('waiting', () => {
+              console.warn('⏳ Video esperando datos...');
+            });
+            
+            videoRef.current.addEventListener('stalled', () => {
+              console.warn('⚠️ Video estancado, reintentando play...');
+              setTimeout(() => {
+                if (videoRef.current && videoRef.current.paused) {
+                  videoRef.current.play().catch(console.warn);
+                }
+              }, 1000);
+            });
+          }
           
           // Marcar como conectado inmediatamente
           setAvatarStatus("connected");
           
-          // El mensaje de bienvenida se enviará cuando el data channel se abra
-          // para asegurar que esté completamente listo
-          
-          // El video debería reproducirse automáticamente con autoplay
-          // Pero intentamos play() por si acaso después de un breve delay
-          setTimeout(() => {
-            if (videoRef.current) {
-              if (videoRef.current.paused) {
-                videoRef.current.play()
-                  .then(() => {
-                    console.log('✅ Video reproduciendo correctamente');
-                  })
-                  .catch((error) => {
-                    console.warn('⚠️ Error en play() (normal con múltiples tracks):', error.name);
-                    // El video puede reproducirse automáticamente de todas formas
-                  });
-              } else {
-                console.log('✅ Video ya está reproduciendo');
-              }
+          // Intentar reproducir inmediatamente y luego verificar
+          const tryPlay = async () => {
+            if (!videoRef.current) return;
+            
+            // Esperar un momento para que el stream se establezca
+            setTimeout(async () => {
+              if (!videoRef.current) return;
               
-              // Verificar que el video tenga contenido
-              console.log('Video info:', {
-                srcObject: !!videoRef.current.srcObject,
-                paused: videoRef.current.paused,
-                readyState: videoRef.current.readyState,
-                videoWidth: videoRef.current.videoWidth,
-                videoHeight: videoRef.current.videoHeight
-              });
+              try {
+                console.log('▶️ Intentando reproducir video...');
+                // Asegurar que esté muteado para autoplay
+                if (!videoRef.current.muted) {
+                  videoRef.current.muted = true;
+                }
+                await videoRef.current.play();
+                console.log('✅ Video reproduciendo');
+                videoIsPlayingRef.current = true;
+                
+                // Desmutear después de que empiece a reproducir
+                setTimeout(() => {
+                  if (videoRef.current && videoRef.current.videoWidth > 0) {
+                    videoRef.current.muted = false;
+                    console.log('🔊 Video desmuteado');
+                  }
+                }, 1000);
+              } catch (error: any) {
+                console.warn('⚠️ Error en play inicial:', error.name, error.message);
+                // Reintentar después de un delay
+                setTimeout(async () => {
+                  if (videoRef.current && videoRef.current.paused) {
+                    try {
+                      console.log('🔄 Reintentando play...');
+                      await videoRef.current.play();
+                      videoIsPlayingRef.current = true;
+                      console.log('✅ Video reproduciendo (reintento)');
+                    } catch (e2: any) {
+                      console.warn('❌ Error en reintento de play:', e2.name);
+                    }
+                  }
+                }, 1000);
+              }
+            }, 300); // Pequeño delay para que el stream se establezca
+          };
+          
+          // Intentar reproducir después de asignar el stream
+          tryPlay();
+          
+          // Verificar periódicamente si el video tiene dimensiones (hasta 15 segundos)
+          let dimensionCheckCount = 0;
+          const maxDimensionChecks = 30; // 15 segundos
+          
+          const checkDimensions = setInterval(() => {
+            if (!videoRef.current) {
+              clearInterval(checkDimensions);
+              return;
             }
-          }, 200);
+            
+            dimensionCheckCount++;
+            const video = videoRef.current;
+            const stream = video.srcObject as MediaStream | null;
+            
+            if (stream) {
+              const videoTracks = stream.getVideoTracks();
+              if (dimensionCheckCount % 4 === 0) { // Log cada 2 segundos
+                console.log(`🔍 Verificación ${dimensionCheckCount}/${maxDimensionChecks}:`, {
+                  videoWidth: video.videoWidth,
+                  videoHeight: video.videoHeight,
+                  readyState: video.readyState,
+                  paused: video.paused,
+                  tracks: videoTracks.length,
+                  trackEnabled: videoTracks[0]?.enabled,
+                  trackReadyState: videoTracks[0]?.readyState
+                });
+              }
+            }
+            
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+              console.log('✅ Video tiene dimensiones:', video.videoWidth, 'x', video.videoHeight);
+              video.style.display = 'block';
+              video.style.visibility = 'visible';
+              video.style.opacity = '1';
+              clearInterval(checkDimensions);
+            } else if (dimensionCheckCount >= maxDimensionChecks) {
+              console.warn('⚠️ Video sin dimensiones después de 15 segundos');
+              console.warn('Estado del video:', {
+                srcObject: !!video.srcObject,
+                readyState: video.readyState,
+                paused: video.paused,
+                tracks: stream ? stream.getVideoTracks().length : 0
+              });
+              clearInterval(checkDimensions);
+            }
+          }, 500);
         } else if (event.track.kind === 'audio') {
-          console.log('Track de audio recibido (se agregará al mismo stream)');
           // El audio se agregará automáticamente al mismo stream
           if (!streamAssignedRef.current) {
             // Si aún no hay video, esperar un poco
@@ -964,7 +1292,6 @@ INSTRUCCIONES CRÍTICAS:
       await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}/sdp`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${DID_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -1093,7 +1420,7 @@ INSTRUCCIONES CRÍTICAS:
       toast.error(`Error conectando: ${errorMessage}`, { id: "connection", duration: 5000 });
       setAvatarStatus("disconnected");
     }
-  }, [DID_API_KEY, DID_API_URL, DID_API_SERVICE, createDIDAgent, saveMessageToDB]);
+  }, [DID_API_URL, DID_API_SERVICE, createDIDAgent, saveMessageToDB]);
 
   // Procesar cola de ICE candidates
   const processIceCandidatesQueue = useCallback(async () => {
@@ -1109,7 +1436,6 @@ INSTRUCCIONES CRÍTICAS:
         await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}/ice`, {
           method: 'POST',
           headers: {
-            'Authorization': `Basic ${DID_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -1125,49 +1451,91 @@ INSTRUCCIONES CRÍTICAS:
     }
     
     isProcessingIceCandidatesRef.current = false;
-  }, [DID_API_KEY, DID_API_URL, DID_API_SERVICE]);
+  }, [DID_API_URL, DID_API_SERVICE]);
 
   // Destruir conexión
   const destroyConnection = useCallback(async () => {
     try {
+      console.log('🛑 Destruyendo conexión...');
+      
+      // Detener y limpiar todos los tracks del video
+      if (videoRef.current) {
+        if (videoRef.current.srcObject) {
+          const stream = videoRef.current.srcObject as MediaStream;
+          stream.getTracks().forEach(track => {
+            console.log('🛑 Deteniendo track:', track.kind);
+            track.stop();
+          });
+        }
+        // Pausar y limpiar el video
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+        videoRef.current.load(); // Resetear el elemento video completamente
+        console.log('✅ Video element reseteado');
+      }
+      
+      // Cerrar peer connection
       if (pcRef.current) {
+        // Remover todos los event listeners antes de cerrar
+        pcRef.current.ontrack = null;
+        pcRef.current.oniceconnectionstatechange = null;
+        pcRef.current.onicegatheringstatechange = null;
+        pcRef.current.onicecandidate = null;
         pcRef.current.close();
         pcRef.current = null;
+        console.log('✅ PeerConnection cerrada');
       }
+      
+      // Cerrar data channel
       if (dataChannelRef.current) {
         dataChannelRef.current.close();
         dataChannelRef.current = null;
+        console.log('✅ DataChannel cerrada');
       }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
+      
+      // Limpiar intervalos
       if (statsIntervalIdRef.current) {
         clearInterval(statsIntervalIdRef.current);
         statsIntervalIdRef.current = null;
       }
+      
+      // Eliminar stream de D-ID
       if (streamIdRef.current && sessionIdRef.current) {
-        await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Basic ${DID_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ session_id: sessionIdRef.current }),
-        });
+        try {
+          await fetch(`${DID_API_URL}/${DID_API_SERVICE}/streams/${streamIdRef.current}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ session_id: sessionIdRef.current }),
+          });
+          console.log('✅ Stream de D-ID eliminado');
+        } catch (e) {
+          console.warn('⚠️ Error eliminando stream de D-ID:', e);
+        }
       }
+      
+      // Resetear todos los refs
       streamIdRef.current = null;
       sessionIdRef.current = null;
       sessionClientAnswerRef.current = null;
+      agentIdRef.current = "";
+      chatIdRef.current = "";
       partialResponseRef.current = '';
       currentResponseRef.current = '';
       iceCandidatesQueueRef.current = [];
       streamAssignedRef.current = false;
-      welcomeMessageSentRef.current = false; // Reset para permitir nuevo mensaje de bienvenida
+      welcomeMessageSentRef.current = false;
+      videoIsPlayingRef.current = false;
+      lastBytesReceivedRef.current = 0;
+      isProcessingIceCandidatesRef.current = false;
+      
       setAvatarStatus("disconnected");
+      console.log('✅ Conexión destruida completamente');
     } catch (error) {
-      console.error("Error destruyendo conexión:", error);
+      console.error("❌ Error destruyendo conexión:", error);
     }
-  }, [DID_API_KEY, DID_API_URL, DID_API_SERVICE]);
+  }, [DID_API_URL, DID_API_SERVICE]);
 
   // Iniciar avatar (crear agente y conectar)
   const startAvatar = useCallback(async () => {
@@ -1206,7 +1574,6 @@ INSTRUCCIONES CRÍTICAS:
       const res = await fetch(`${DID_API_URL}/agents/${agentIdRef.current}/chat/${chatIdRef.current}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${DID_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -1240,7 +1607,7 @@ INSTRUCCIONES CRÍTICAS:
     } finally {
       setIsSpeaking(false);
     }
-  }, [chatInput, isSpeaking, avatarStatus, saveMessageToDB, DID_API_KEY, DID_API_URL]);
+  }, [chatInput, isSpeaking, avatarStatus, saveMessageToDB, DID_API_URL]);
 
   const toggleRecording = async () => {
     if (isSpeaking || avatarStatus !== "connected") return;
@@ -1312,7 +1679,6 @@ INSTRUCCIONES CRÍTICAS:
       const res = await fetch(`${DID_API_URL}/agents/${agentIdRef.current}/chat/${chatIdRef.current}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${DID_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -1344,7 +1710,7 @@ INSTRUCCIONES CRÍTICAS:
       console.error("Error enviando mensaje al avatar:", err);
       toast.error(`Error: ${err.message}`);
     }
-  }, [saveMessageToDB, DID_API_KEY, DID_API_URL]);
+  }, [saveMessageToDB, DID_API_URL]);
 
   const syncGeneralFormFromState = () => {
     setGeneralForm({
@@ -1963,38 +2329,80 @@ INSTRUCCIONES CRÍTICAS:
             </div>
 
             {/* Área para el video del avatar */}
-            <div className="avatar-panel__embed" style={{ position: 'relative' }}>
+            <div className="avatar-panel__embed" style={{ 
+              position: 'relative',
+              width: '100%',
+              minHeight: '600px',
+              backgroundColor: 'rgba(0,0,0,0.1)',
+              borderRadius: '12px',
+              overflow: 'hidden'
+            }}>
               <video
                 ref={videoRef}
                 className="avatar-panel__video"
                 autoPlay
                 playsInline
-                muted={false}
+                muted={true}
                 style={{
                   width: '100%',
-                  height: '100%',
+                  height: 'auto',
                   minHeight: '600px',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   borderRadius: '12px',
                   background: 'rgba(0,0,0,0.3)',
-                  display: 'block', // Siempre visible cuando hay stream
+                  display: 'block',
+                  visibility: avatarStatus === "connected" && videoRef.current?.srcObject ? 'visible' : 'visible',
                   zIndex: 2,
-                  opacity: avatarStatus === "connected" ? 1 : 0.3
+                  opacity: avatarStatus === "connected" ? 1 : 0.3,
+                  position: 'relative'
                 }}
                 onLoadedMetadata={() => {
                   console.log('✅ Video metadata cargado, dimensiones:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
                   if (videoRef.current) {
-                    videoRef.current.play().catch(console.warn);
+                    const video = videoRef.current;
+                    // Forzar visibilidad cuando se cargan los metadatos
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                      video.style.display = 'block';
+                      video.style.visibility = 'visible';
+                      video.style.opacity = '1';
+                      video.style.width = '100%';
+                      video.style.height = 'auto';
+                      video.play().catch(console.warn);
+                      console.log('🎬 Video forzado a visible después de metadata con dimensiones:', video.videoWidth, 'x', video.videoHeight);
+                    } else {
+                      console.warn('⚠️ Metadata cargada pero sin dimensiones todavía');
+                    }
                   }
                 }}
                 onCanPlay={() => {
-                  console.log('✅ Video puede reproducirse');
                   if (videoRef.current) {
-                    videoRef.current.play().catch(console.warn);
+                    const video = videoRef.current;
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                      video.style.display = 'block';
+                      video.style.visibility = 'visible';
+                      video.style.opacity = '1';
+                    }
+                    video.play().catch(console.warn);
                   }
                 }}
                 onPlay={() => {
-                  console.log('✅ Video empezó a reproducirse');
+                  if (videoRef.current) {
+                    const video = videoRef.current;
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                      video.style.display = 'block';
+                      video.style.visibility = 'visible';
+                      video.style.opacity = '1';
+                    } else {
+                      // Esperar a que tenga dimensiones
+                      video.addEventListener('loadedmetadata', () => {
+                        if (video.videoWidth > 0 && video.videoHeight > 0) {
+                          video.style.display = 'block';
+                          video.style.visibility = 'visible';
+                          video.style.opacity = '1';
+                        }
+                      }, { once: true });
+                    }
+                  }
                 }}
                 onError={(e) => {
                   console.error('❌ Error en el video:', e);
@@ -2147,6 +2555,508 @@ INSTRUCCIONES CRÍTICAS:
     </div>
   </div>
 )}
+
+      {/* Modal de datos faltantes */}
+      {showMissingDataModal && (
+        <div 
+          className="missing-data-modal-backdrop" 
+          onClick={() => setShowMissingDataModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000,
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          <div 
+            className="missing-data-modal" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(135deg, #1a2236, #0f172a)',
+              borderRadius: '16px',
+              padding: '32px',
+              width: '90%',
+              maxWidth: '600px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: 'var(--txt)', marginBottom: '8px' }}>
+                  ¡Bienvenido!
+                </h2>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--muted)' }}>
+                  Nos damos cuenta que es la primera vez que nos visitas. Cuéntanos un poco sobre ti...
+                </p>
+              </div>
+              <button
+                onClick={() => setShowMissingDataModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '0',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '4px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.color = 'var(--txt)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = 'var(--muted)';
+                }}
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Nombre */}
+              {missingDataForm.nombre !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Nombre *
+                  </label>
+                  <input
+                    type="text"
+                    value={missingDataForm.nombre || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, nombre: e.target.value })}
+                    placeholder="Tu nombre"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Apellido */}
+              {missingDataForm.apellido !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Apellido *
+                  </label>
+                  <input
+                    type="text"
+                    value={missingDataForm.apellido || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, apellido: e.target.value })}
+                    placeholder="Tu apellido"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Fecha de nacimiento */}
+              {missingDataForm.fecha_nacimiento !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Fecha de Nacimiento *
+                  </label>
+                  <input
+                    type="date"
+                    value={missingDataForm.fecha_nacimiento || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, fecha_nacimiento: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Sexo */}
+              {missingDataForm.sexo !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Sexo *
+                  </label>
+                  <select
+                    value={missingDataForm.sexo || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, sexo: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <option value="">Seleccionar...</option>
+                    <option value="Male">Masculino</option>
+                    <option value="Female">Femenino</option>
+                    <option value="Other">Otro</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Altura */}
+              {missingDataForm.altura !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Altura (cm)
+                  </label>
+                  <input
+                    type="number"
+                    value={missingDataForm.altura || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, altura: e.target.value })}
+                    placeholder="Ej: 170"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Peso */}
+              {missingDataForm.peso !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Peso (kg)
+                  </label>
+                  <input
+                    type="number"
+                    value={missingDataForm.peso || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, peso: e.target.value })}
+                    placeholder="Ej: 70"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Tipo de sangre */}
+              {missingDataForm.id_tipo_sangre !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Tipo de Sangre
+                  </label>
+                  <select
+                    value={missingDataForm.id_tipo_sangre || 0}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, id_tipo_sangre: Number(e.target.value) })}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <option value="0">Seleccionar...</option>
+                    {state.CATALOGOS.TIPO_SANGRE.map((tipo) => (
+                      <option key={tipo.id} value={tipo.id}>
+                        {tipo.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Ocupación */}
+              {missingDataForm.id_ocupacion !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Ocupación
+                  </label>
+                  <select
+                    value={missingDataForm.id_ocupacion || 0}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, id_ocupacion: Number(e.target.value) })}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <option value="0">Seleccionar...</option>
+                    {state.CATALOGOS.OCUPACION.map((ocup) => (
+                      <option key={ocup.id} value={ocup.id}>
+                        {ocup.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Estado civil */}
+              {missingDataForm.id_estado_civil !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Estado Civil
+                  </label>
+                  <select
+                    value={missingDataForm.id_estado_civil || 0}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, id_estado_civil: Number(e.target.value) })}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <option value="0">Seleccionar...</option>
+                    {state.CATALOGOS.ESTADO_CIVIL.map((estado) => (
+                      <option key={estado.id} value={estado.id}>
+                        {estado.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Estilo de vida */}
+              {missingDataForm.estilo_vida !== undefined && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--txt)', fontSize: '14px', fontWeight: 500 }}>
+                    Estilo de Vida
+                  </label>
+                  <textarea
+                    value={missingDataForm.estilo_vida || ""}
+                    onChange={(e) => setMissingDataForm({ ...missingDataForm, estilo_vida: e.target.value })}
+                    placeholder="Describe tu estilo de vida (ejercicio, dieta, hábitos, etc.)"
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      outline: 'none',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(82, 229, 255, 0.5)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(82, 229, 255, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '12px', 
+              marginTop: '32px',
+              paddingTop: '24px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.12)'
+            }}>
+              <button
+                onClick={() => setShowMissingDataModal(false)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: 'var(--txt)',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                }}
+              >
+                Omitir por ahora
+              </button>
+              <button
+                onClick={handleSaveMissingData}
+                disabled={savingMissingData}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: savingMissingData 
+                    ? 'rgba(82, 229, 255, 0.3)' 
+                    : 'linear-gradient(135deg, var(--primary), var(--accent))',
+                  color: savingMissingData ? 'var(--txt)' : '#04121f',
+                  cursor: savingMissingData ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                  opacity: savingMissingData ? 0.6 : 1
+                }}
+                onMouseEnter={(e) => {
+                  if (!savingMissingData) {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 8px 18px rgba(82, 229, 255, 0.3)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!savingMissingData) {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }
+                }}
+              >
+                {savingMissingData ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
 

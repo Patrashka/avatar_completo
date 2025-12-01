@@ -14,6 +14,9 @@ from typing import Optional, Dict, List, Any
 import logging
 import bcrypt
 
+# Inicializar logger antes de usarlo
+logger = logging.getLogger(__name__)
+
 # Cargar .env con manejo de errores de codificación
 try:
     load_dotenv()
@@ -43,8 +46,6 @@ except UnicodeDecodeError as e:
         logger.warning("⚠️ Archivo .env no encontrado")
 except Exception as e:
     logger.warning(f"⚠️ Error cargando .env: {e}")
-
-logger = logging.getLogger(__name__)
 
 # ===========================================
 # CONFIGURACIÓN DE CONEXIONES
@@ -377,14 +378,48 @@ def create_diagnosis(
 
 def get_patient_consultations(patient_id: int, limit: int = 10) -> List[Dict]:
     """Obtiene las consultas de un paciente usando stored procedure"""
-    query = "SELECT * FROM get_patient_consultations_sp(%s, %s)"
-    results = execute_query(query, (patient_id, limit))
-    # Mapear campos para compatibilidad
-    for result in results:
-        result['cita_id'] = result.get('cita_id', 0)
-        result['id_estado_consulta'] = result.get('id_estado_consulta', 0)
-        result['id_episodio'] = result.get('id_episodio', 0)
-    return results
+    try:
+        query = "SELECT * FROM get_patient_consultations_sp(%s, %s)"
+        logger.info(f"Ejecutando stored procedure get_patient_consultations_sp para paciente {patient_id} con límite {limit}")
+        results = execute_query(query, (patient_id, limit))
+        logger.info(f"Stored procedure retornó {len(results)} resultados")
+        
+        # Mapear campos para compatibilidad
+        for result in results:
+            result['cita_id'] = result.get('cita_id', 0)
+            result['id_estado_consulta'] = result.get('id_estado_consulta', 0)
+            result['id_episodio'] = result.get('id_episodio', 0)
+        return results
+    except Exception as e:
+        logger.error(f"Error en get_patient_consultations para paciente {patient_id}: {e}")
+        # Si el stored procedure no existe, intentar con una query directa como fallback
+        logger.warning("Intentando query directa como fallback...")
+        try:
+            fallback_query = """
+                SELECT 
+                    c.id, 
+                    c.fecha_hora, 
+                    c.narrativa, 
+                    c.diagnostico_final,
+                    m.nombre as medico_nombre,
+                    ec.nombre as estado_consulta,
+                    c.mongo_consulta_id,
+                    c.cita_id,
+                    c.id_estado_consulta,
+                    c.id_episodio
+                FROM consulta c
+                LEFT JOIN medico m ON c.id_medico = m.id
+                LEFT JOIN estado_consulta ec ON c.id_estado_consulta = ec.id
+                WHERE c.id_paciente = %s
+                ORDER BY c.fecha_hora DESC
+                LIMIT %s
+            """
+            results = execute_query(fallback_query, (patient_id, limit))
+            logger.info(f"Query directa retornó {len(results)} resultados")
+            return results
+        except Exception as fallback_error:
+            logger.error(f"Error en query fallback: {fallback_error}")
+            raise e  # Re-lanzar el error original
 
 def get_patient_files(patient_id: int) -> List[Dict]:
     """Obtiene los archivos asociados a un paciente usando stored procedure"""
@@ -489,6 +524,88 @@ def get_patient_photo(patient_id: int) -> Optional[str]:
     result = execute_one(query, (patient_id,))
     return result.get("url") if result else None
 
+
+def register_patient(
+    username: str,
+    password: str,
+    correo: str,
+    nombre: str = "",
+    apellido: str = "",
+    telefono: str = ""
+) -> Optional[Dict]:
+    """
+    Registra un nuevo paciente en el sistema
+    
+    Args:
+        username: Nombre de usuario único
+        password: Contraseña (se hasheará con bcrypt)
+        correo: Correo electrónico (simulado, no se verifica)
+        nombre: Nombre del paciente
+        apellido: Apellido del paciente
+        telefono: Teléfono del paciente
+    
+    Returns:
+        Diccionario con información del usuario y paciente creado, o None si falla
+    """
+    conn = get_postgres_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Verificar si el usuario o correo ya existe
+            check_query = """
+                SELECT id FROM USUARIO 
+                WHERE username = %s OR correo = %s
+            """
+            cursor.execute(check_query, (username, correo))
+            existing = cursor.fetchone()
+            if existing:
+                logger.warning(f"Usuario o correo ya existe: {username} / {correo}")
+                return None
+            
+            # Hashear contraseña
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            
+            # Crear usuario (rol_id = 3 para paciente)
+            insert_user_query = """
+                INSERT INTO USUARIO (username, correo, telefono, password_hash, rol_id)
+                VALUES (%s, %s, %s, %s, 3)
+                RETURNING id
+            """
+            cursor.execute(insert_user_query, (username, correo, telefono or None, password_hash))
+            user_result = cursor.fetchone()
+            usuario_id = user_result['id']
+            
+            # Crear paciente con datos mínimos
+            insert_patient_query = """
+                INSERT INTO PACIENTE (usuario_id, nombre, apellido, correo, telefono)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+            """
+            cursor.execute(insert_patient_query, (
+                usuario_id,
+                nombre or "",
+                apellido or "",
+                correo,
+                telefono or None
+            ))
+            patient_result = cursor.fetchone()
+            paciente_id = patient_result['id']
+            
+            conn.commit()
+            
+            logger.info(f"✅ Usuario y paciente registrados: {username} (ID: {usuario_id}, Paciente ID: {paciente_id})")
+            
+            return {
+                "usuario_id": usuario_id,
+                "username": username,
+                "correo": correo,
+                "rol": "paciente",
+                "paciente_id": paciente_id,
+                "paciente_nombre": f"{nombre} {apellido}".strip() or username
+            }
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error registrando paciente: {e}")
+        raise
 
 def get_doctor_by_id(doctor_id: int) -> Optional[Dict]:
     """Obtiene un médico por ID usando stored procedure"""

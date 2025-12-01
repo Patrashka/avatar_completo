@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { api } from "../../services/api";
 import toast from "react-hot-toast";
+import ConversationSummariesTab from "../../components/ConversationSummariesTab";
 
 /** ===== Tipos (opcionales para TS) ===== */
 type Catalogo = { id: number; nombre: string };
@@ -390,7 +391,7 @@ export default function DoctorDashboard() {
  const [assigningPatient, setAssigningPatient] = useState(false);
  const [unassigningPatient, setUnassigningPatient] = useState(false);
  const [activeTab, setActiveTab] = useState<
- "general" | "consulta" | "episodio" | "archivos" | "avatar" | "auditoria" | "catalogos" | "ai"
+ "general" | "consulta" | "episodio" | "archivos" | "avatar" | "diagnostico"
  >("general");
  const [searchTerm, setSearchTerm] = useState("");
  const [searchResults, setSearchResults] = useState<Array<Record<string, any>>>([]);
@@ -1667,92 +1668,16 @@ const assignDisabled = assigningPatient || unassigningPatient || patientLoading 
  </div>
  </div>
 
- {/* Simulador IA con pop-ups */}
+ {/* AI Med-Assistant - Resúmenes de Conversaciones */}
  <div className="subcard" style={{ marginTop: 18 }}>
  <h3>AI Med-Assistant</h3>
- <p className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
- Estas son las preguntas que encontré relevante para que puedas hacerme sobre el pre-diagnóstico dado.
+ <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+ Resúmenes inteligentes de las conversaciones del paciente con el avatar, generados con Gemini AI.
  </p>
- <div className="tool-grid">
- <button className="btn-ghost" onClick={() => openTool("resumen")}>
- 1. Resumen estructurado del caso
- </button>
- <button className="btn-ghost" onClick={() => openTool("expPreDx")}>
- 2. Explicación del pre-dx IA
- </button>
- <button className="btn-ghost" onClick={() => openTool("difDx")}>
- 3. Diagnóstico diferencial
- </button>
- <button className="btn-ghost" onClick={() => openTool("redFlags")}>
- 4. Signos de alarma (red flags)
- </button>
- <button className="btn-ghost" onClick={() => openTool("labsPlan")}>
- 5. Plan de laboratorio sugerido
- </button>
- <button className="btn-ghost" onClick={() => openTool("manejo")}>
- 6. Manejo ambulatorio vs hospitalario
- </button>
- <button className="btn-ghost" onClick={() => openTool("hidratacion")}>
- 7. Recs de hidratación
- </button>
- <button className="btn-ghost" onClick={() => openTool("alergiaAbx")}>
- 8. Alergia a penicilina
- </button>
- <button className="btn-ghost" onClick={() => openTool("alta")}>
- 9. Checklist de alta
- </button>
- <button className="btn-ghost" onClick={() => openTool("notaCorta")}>
- 10. Borrador de nota clínica
- </button>
- <button className="btn-ghost" onClick={() => openTool("expPaciente")}>
- 11. Explicación para el paciente
- </button>
- <button className="btn-ghost" onClick={() => openTool("dengueTipos")}>
- 12. Dengue clásico vs grave
- </button>
- <button className="btn-ghost" onClick={() => openTool("labGraph")}>
- 13. Ver curva de laboratorio (imagen)
- </button>
- <button className="btn-ghost" onClick={() => openTool("ordenes")}>
- 14. Órdenes médicas sugeridas
- </button>
+ <ConversationSummariesTab patientId={state.PACIENTE.id} />
  </div>
  </div>
 
- {/* Pre-diagnóstico IA (a lo ancho) */}
- <div className="preDxFull ai-box">
- <div>
- <b>Pre-diagnóstico (IA)</b>
- </div>
- <div className="muted" id="preDxText">
- {state.AI.preDiagnosis}
- </div>
- <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
- <button className="btn" id="btnUseAI" onClick={useAIasFinal}>
- Usar como diagnóstico
- </button>
- <button className="btn" id="btnAppendAI" onClick={appendAItoFinal}>
- Agregar al diagnóstico
- </button>
- </div>
- </div>
- </div>
-
- {/* COLUMNA CENTRAL (debajo de la foto) */}
- <div className="span-under-photo">
- <div className="field">
- <label style={{ marginTop: 10 as number }}>Diagnóstico final del médico</label>
- <textarea
- data-table="CONSULTA"
- data-column="diagnostico_final"
- id="txtDxFinal"
- placeholder="Diagnóstico definitivo…"
- style={{ minHeight: "442px" }} 
- value={state.CONSULTA.diagnostico_final}
- onChange={(e) => setConsulta({ diagnostico_final: e.target.value })}
- />
- </div>
- </div>
 
  {/* FOTO fija derecha */}
  <div className="photoCell">
@@ -1779,9 +1704,7 @@ const assignDisabled = assigningPatient || unassigningPatient || patientLoading 
  ["episodio", "Episodio"],
  ["archivos", "Archivos"],
  ["avatar", "Avatar/Sesiones"],
- ["auditoria", "Auditoría"],
- ["catalogos", "Catálogos"],
- ["ai", "AI Insights"],
+ ["diagnostico", "Diagnóstico"],
  ] as const).map(([id, label]) => (
  <button
  key={id}
@@ -2326,201 +2249,27 @@ const assignDisabled = assigningPatient || unassigningPatient || patientLoading 
  </div>
  </div>
  </div>
+ </div>
 
- {/* AUDITORÍA */}
- <div className={`tabpanel ${activeTab === "auditoria" ? "active" : ""}`} id="tab-auditoria">
+ {/* DIAGNÓSTICO */}
+ <div className={`tabpanel ${activeTab === "diagnostico" ? "active" : ""}`} id="tab-diagnostico">
  <div className="subcard">
- <h3>AUDITORIA</h3>
- <table className="table" id="tblAuditoria">
- <thead>
- <tr>
- <th>id</th>
- <th>usuario_id</th>
- <th>accion</th>
- <th>entidad</th>
- <th>entidad_id</th>
- <th>fecha_hora</th>
- <th>detalle</th>
- </tr>
- </thead>
- <tbody>
- {state.AUDITORIA.map((a) => (
- <tr key={a.id}>
- <td>{a.id}</td>
- <td>{a.usuario_id}</td>
- <td>{a.accion}</td>
- <td>{a.entidad}</td>
- <td>{a.entidad_id}</td>
- <td>{fmt(a.fecha_hora)}</td>
- <td>
- <code>{JSON.stringify(a.detalle)}</code>
- </td>
- </tr>
- ))}
- </tbody>
- </table>
- </div>
- </div>
-
- {/* CATÁLOGOS */}
- <div className={`tabpanel ${activeTab === "catalogos" ? "active" : ""}`} id="tab-catalogos">
- <div className="grid-2">
- <div className="subcard">
- <h3>ESTADO_CITA</h3>
- <ul id="ulEstadoCita">
- {state.CATALOGOS.ESTADO_CITA.map((x) => (
- <li key={x.id}>
- {x.id} — {x.nombre}
- </li>
- ))}
- </ul>
- </div>
- <div className="subcard">
- <h3>TIPO_CITA</h3>
- <ul id="ulTipoCita">
- {state.CATALOGOS.TIPO_CITA.map((x) => (
- <li key={x.id}>
- {x.id} — {x.nombre}
- </li>
- ))}
- </ul>
- </div>
- </div>
-
- <div className="grid-2" style={{ marginTop: 12 }}>
- <div className="subcard">
- <h3>ESTADO_CONSULTA</h3>
- <ul id="ulEstadoConsulta">
- {state.CATALOGOS.ESTADO_CONSULTA.map((x) => (
- <li key={x.id}>
- {x.id} — {x.nombre}
- </li>
- ))}
- </ul>
- </div>
- <div className="subcard">
- <h3>TIPO_SANGRE / OCUPACION / ESTADO_CIVIL</h3>
- <div className="row-3">
- <div>
- <b>TIPO_SANGRE</b>
- <ul id="ulTipoSangre">
- {state.CATALOGOS.TIPO_SANGRE.map((x) => (
- <li key={x.id}>
- {x.id} — {x.nombre}
- </li>
- ))}
- </ul>
- </div>
- <div>
- <b>OCUPACION</b>
- <ul id="ulOcupacion">
- {state.CATALOGOS.OCUPACION.map((x) => (
- <li key={x.id}>
- {x.id} — {x.nombre}
- </li>
- ))}
- </ul>
- </div>
- <div>
- <b>ESTADO_CIVIL</b>
- <ul id="ulEstadoCivil">
- {state.CATALOGOS.ESTADO_CIVIL.map((x) => (
- <li key={x.id}>
- {x.id} — {x.nombre}
- </li>
- ))}
- </ul>
- </div>
- </div>
+ <h3>Diagnóstico final del médico</h3>
+ <div className="field">
+ <label>Diagnóstico definitivo</label>
+ <textarea
+ data-table="CONSULTA"
+ data-column="diagnostico_final"
+ id="txtDxFinal"
+ placeholder="Diagnóstico definitivo…"
+ style={{ minHeight: "500px", width: "100%" }} 
+ value={state.CONSULTA.diagnostico_final}
+ onChange={(e) => setConsulta({ diagnostico_final: e.target.value })}
+ />
  </div>
  </div>
  </div>
 
- {/* AI INSIGHTS */}
- <div className={`tabpanel ${activeTab === "ai" ? "active" : ""}`} id="tab-ai">
- <div className="grid-2">
- <div className="subcard">
- <h3>Resumen de síntomas (IA)</h3>
- <ul className="muted" id="ulSymptoms">
- {state.AI.symptoms.map((s, i) => (
- <li key={i}>{s}</li>
- ))}
- </ul>
-
- <h3 style={{ marginTop: 14 as number }}>Condiciones del Paciente (ICD-10)</h3>
- {state.DIAGNOSTICOS.length > 0 ? (
- <div className="muted" id="dxICD10">
-     <table className="table" style={{ fontSize: '12px', marginTop: '8px' }}>
-       <thead>
-         <tr>
-           <th>Código</th>
-           <th>Descripción</th>
-           <th>Fecha</th>
-           <th>Principal</th>
-         </tr>
-       </thead>
-       <tbody>
-         {state.DIAGNOSTICOS.map((d) => (
-           <tr key={d.id}>
-             <td><strong>{d.codigo_icd10 || "—"}</strong></td>
-             <td>{d.descripcion || "—"}</td>
-             <td>{d.fecha_diagnostico ? new Date(d.fecha_diagnostico).toLocaleDateString('es-ES') : "—"}</td>
-             <td>{d.es_principal ? "✓" : ""}</td>
-           </tr>
-         ))}
-       </tbody>
-     </table>
- </div>
- ) : (
-   <div className="muted" id="dxICD10">
-     {state.AI.suggestedICD10.length > 0 
-       ? state.AI.suggestedICD10.join(", ")
-       : "No hay diagnósticos registrados"}
-   </div>
- )}
-
- <h3 style={{ marginTop: 14 as number }}>Pasos siguientes</h3>
- <ul className="muted" id="ulNextSteps">
- {state.AI.nextSteps.map((s, i) => (
- <li key={i}>{s}</li>
- ))}
- </ul>
-
- <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
- <button className="btn" id="btnAIToFinal" onClick={useAIasFinal}>
- Usar pre-diagnóstico
- </button>
- <button className="btn" id="btnAIAppend" onClick={appendAItoFinal}>
- Agregar al diagnóstico
- </button>
- </div>
- </div>
-
- <div className="subcard">
- <h3>Riesgos estimados</h3>
- <table className="table" id="tblRisks">
- <thead>
- <tr>
- <th>Riesgo</th>
- <th>Prob.</th>
- </tr>
- </thead>
- <tbody>
- {state.AI.risks.map((r, i) => (
- <tr key={i}>
- <td>{r.name}</td>
- <td>{Math.round(r.score * 100)}%</td>
- </tr>
- ))}
- </tbody>
- </table>
- <div className="muted" style={{ marginTop: 8 }}>
- Valores orientativos. Confirmar con laboratorio y juicio clínico.
- </div>
- </div>
- </div>
- </div>
- </div>
  {/* /TABS */}
  </div>
  </section>
@@ -2593,6 +2342,259 @@ const assignDisabled = assigningPatient || unassigningPatient || patientLoading 
  </div>
  </div>
  </div>
+ )}
+
+ {/* ===== MODAL AGREGAR CONDICIÓN ===== */}
+ {showAddConditionModal && (
+   <div 
+     className="modal-backdrop" 
+     onClick={() => setShowAddConditionModal(false)}
+     style={{
+       position: 'fixed',
+       top: 0,
+       left: 0,
+       right: 0,
+       bottom: 0,
+       background: 'rgba(0, 0, 0, 0.6)',
+       display: 'flex',
+       justifyContent: 'center',
+       alignItems: 'center',
+       zIndex: 10000
+     }}
+   >
+     <div 
+       className="modal" 
+       onClick={(e) => e.stopPropagation()}
+       style={{
+         background: '#1a2236',
+         padding: '24px',
+         borderRadius: '12px',
+         width: '90%',
+         maxWidth: '500px',
+         border: '1px solid #344'
+       }}
+     >
+       <div className="modal-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+         <h3 style={{ margin: 0, color: '#fff' }}>Agregar Condición</h3>
+         <button 
+           onClick={() => setShowAddConditionModal(false)}
+           style={{
+             background: 'transparent',
+             border: 'none',
+             color: '#9bb3d1',
+             fontSize: '20px',
+             cursor: 'pointer',
+             padding: '0',
+             width: '24px',
+             height: '24px',
+             display: 'flex',
+             alignItems: 'center',
+             justifyContent: 'center'
+           }}
+           aria-label="Cerrar"
+         >
+           ✕
+         </button>
+       </div>
+       
+       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+         <div className="field">
+           <label style={{ display: 'block', marginBottom: '8px', color: '#9bb3d1', fontSize: '14px' }}>
+             Código ICD-10 (Opcional)
+           </label>
+           <input
+             type="text"
+             value={newCondition.codigo_icd10}
+             onChange={(e) => setNewCondition({ ...newCondition, codigo_icd10: e.target.value })}
+             placeholder="Ej: A90, E11, Z88.0"
+             style={{
+               width: '100%',
+               padding: '10px 12px',
+               borderRadius: '8px',
+               border: '1px solid rgba(255, 255, 255, 0.12)',
+               background: 'rgba(255, 255, 255, 0.04)',
+               color: '#e6f0ff',
+               fontSize: '14px'
+             }}
+           />
+         </div>
+         
+         <div className="field">
+           <label style={{ display: 'block', marginBottom: '8px', color: '#9bb3d1', fontSize: '14px' }}>
+             Descripción *
+           </label>
+           <textarea
+             value={newCondition.descripcion}
+             onChange={(e) => setNewCondition({ ...newCondition, descripcion: e.target.value })}
+             placeholder="Descripción de la condición o diagnóstico"
+             required
+             style={{
+               width: '100%',
+               padding: '10px 12px',
+               borderRadius: '8px',
+               border: '1px solid rgba(255, 255, 255, 0.12)',
+               background: 'rgba(255, 255, 255, 0.04)',
+               color: '#e6f0ff',
+               fontSize: '14px',
+               minHeight: '80px',
+               resize: 'vertical',
+               fontFamily: 'inherit'
+             }}
+           />
+         </div>
+         
+         <div className="field">
+           <label style={{ display: 'block', marginBottom: '8px', color: '#9bb3d1', fontSize: '14px' }}>
+             Fecha de Diagnóstico
+           </label>
+           <input
+             type="date"
+             value={newCondition.fecha_diagnostico}
+             onChange={(e) => setNewCondition({ ...newCondition, fecha_diagnostico: e.target.value })}
+             style={{
+               width: '100%',
+               padding: '10px 12px',
+               borderRadius: '8px',
+               border: '1px solid rgba(255, 255, 255, 0.12)',
+               background: 'rgba(255, 255, 255, 0.04)',
+               color: '#e6f0ff',
+               fontSize: '14px'
+             }}
+           />
+         </div>
+         
+         <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+           <input
+             type="checkbox"
+             id="es_principal"
+             checked={newCondition.es_principal}
+             onChange={(e) => setNewCondition({ ...newCondition, es_principal: e.target.checked })}
+             style={{
+               width: '18px',
+               height: '18px',
+               cursor: 'pointer'
+             }}
+           />
+           <label 
+             htmlFor="es_principal"
+             style={{ 
+               color: '#9bb3d1', 
+               fontSize: '14px',
+               cursor: 'pointer',
+               margin: 0
+             }}
+           >
+             Diagnóstico principal
+           </label>
+         </div>
+       </div>
+       
+       <div className="modal-footer" style={{ 
+         display: 'flex', 
+         justifyContent: 'flex-end', 
+         gap: '12px', 
+         marginTop: '24px',
+         paddingTop: '20px',
+         borderTop: '1px solid rgba(255, 255, 255, 0.12)'
+       }}>
+         <button
+           onClick={() => {
+             setShowAddConditionModal(false);
+             setNewCondition({
+               codigo_icd10: "",
+               descripcion: "",
+               es_principal: false,
+               fecha_diagnostico: new Date().toISOString().split('T')[0]
+             });
+           }}
+           style={{
+             padding: '10px 20px',
+             borderRadius: '8px',
+             border: '1px solid rgba(255, 255, 255, 0.12)',
+             background: 'rgba(255, 255, 255, 0.05)',
+             color: '#e6f0ff',
+             cursor: 'pointer',
+             fontSize: '14px',
+             fontWeight: '500'
+           }}
+         >
+           Cancelar
+         </button>
+         <button
+           onClick={async () => {
+             if (!newCondition.descripcion.trim()) {
+               toast.error("La descripción es requerida");
+               return;
+             }
+             
+             if (!state.EPISODIO.id || state.EPISODIO.id === 0) {
+               toast.error("No hay un episodio activo. Por favor, crea o selecciona un episodio primero.");
+               return;
+             }
+             
+             try {
+               setAddingCondition(true);
+               const result = await api.patient.createDiagnosis(state.PACIENTE.id, {
+                 id_episodio: state.EPISODIO.id,
+                 codigo_icd10: newCondition.codigo_icd10.trim() || undefined,
+                 descripcion: newCondition.descripcion.trim(),
+                 es_principal: newCondition.es_principal
+               });
+               
+               if (result && result.id) {
+                 toast.success("Condición agregada correctamente");
+                 setShowAddConditionModal(false);
+                 setNewCondition({
+                   codigo_icd10: "",
+                   descripcion: "",
+                   es_principal: false,
+                   fecha_diagnostico: new Date().toISOString().split('T')[0]
+                 });
+                 
+                 // Recargar diagnósticos
+                 try {
+                   const diagnoses = await api.patient.getDiagnoses(state.PACIENTE.id);
+                   if (diagnoses && Array.isArray(diagnoses)) {
+                     setState((s) => ({ ...s, DIAGNOSTICOS: diagnoses }));
+                   }
+                 } catch (e) {
+                   console.warn("No se pudieron recargar diagnósticos:", e);
+                   // Recargar paciente completo para obtener diagnósticos actualizados
+                   const currentPatient = patients[activePatientIndex];
+                   if (currentPatient) {
+                     await loadPatientDetails(currentPatient, { showSpinner: false });
+                   }
+                 }
+               } else {
+                 toast.error("Error al crear la condición");
+               }
+             } catch (error: any) {
+               console.error("Error creando diagnóstico:", error);
+               toast.error(error?.message || "Error al crear la condición");
+             } finally {
+               setAddingCondition(false);
+             }
+           }}
+           disabled={addingCondition || !newCondition.descripcion.trim()}
+           style={{
+             padding: '10px 20px',
+             borderRadius: '8px',
+             border: 'none',
+             background: addingCondition || !newCondition.descripcion.trim() 
+               ? 'rgba(82, 229, 255, 0.3)' 
+               : 'linear-gradient(135deg, #52e5ff, #8a7dff)',
+             color: '#0b1220',
+             cursor: addingCondition || !newCondition.descripcion.trim() ? 'not-allowed' : 'pointer',
+             fontSize: '14px',
+             fontWeight: '600',
+             opacity: addingCondition || !newCondition.descripcion.trim() ? 0.6 : 1
+           }}
+         >
+           {addingCondition ? "Guardando..." : "Guardar"}
+         </button>
+       </div>
+     </div>
+   </div>
  )}
 
  <style>{`

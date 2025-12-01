@@ -19,6 +19,24 @@ async function tryFetch(url: string, init?: RequestInit) {
   } catch (e) { return null; }
 }
 
+/* ---------- AUTH ---------- */
+const auth = {
+  async register(data: {
+    username: string;
+    password: string;
+    correo: string;
+    nombre?: string;
+    apellido?: string;
+    telefono?: string;
+  }) {
+    return await tryFetch(withBase(DEFAULT_API, "/api/auth/register"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+  },
+};
+
 async function tryFetchXML(url: string, init?: RequestInit) {
   try {
     const r = await fetch(url, init);
@@ -113,6 +131,12 @@ function savePatientLS(p: any) {
 const doctor = {
   listPatients: listPatientsLS,
   savePatient: savePatientLS,
+  async getConversationsByDate(patientId: number) {
+    return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations/by-date?patientId=${patientId}`));
+  },
+  async getDailySummary(patientId: number, date: string) {
+    return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations/daily-summary?patientId=${patientId}&date=${date}`));
+  },
   async searchPatients(doctorId: number, query: string, options?: { signal?: AbortSignal; limit?: number }) {
     const trimmed = (query || "").trim();
     if (!doctorId || trimmed.length < 2) {
@@ -233,11 +257,20 @@ const patient = {
       body: JSON.stringify(diagnosisData),
     });
   },
+  async getDiagnoses(patientId: number) {
+    return await tryFetch(withBase(PATIENT_API, `/api/db/patient/${patientId}/diagnoses`));
+  },
   async getConversations(patientId: number, limit: number = 10) {
     return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations?patientId=${patientId}&limit=${limit}`));
   },
   async getConversationSummary(conversationId: string) {
     return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations/${conversationId}/summary`));
+  },
+  async getConversationsByDate(patientId: number) {
+    return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations/by-date?patientId=${patientId}`));
+  },
+  async getDailySummary(patientId: number, date: string) {
+    return await tryFetch(withBase(DEFAULT_API, `/api/did/conversations/daily-summary?patientId=${patientId}&date=${date}`));
   }
 };
 
@@ -265,4 +298,4 @@ const adminWithInteractions = {
   }
 };
 
-export const api = { admin: adminWithInteractions, doctor, patient, database };
+export const api = { admin: adminWithInteractions, doctor, patient, database, auth };

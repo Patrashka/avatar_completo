@@ -1,8 +1,16 @@
-# Entornos / secretos
-.env
-.env.local
-.env.*.local
-*.env
+# Entornos / secretos (COMENTADO - para repositorio privado)
+# Los archivos .env ahora se incluyen en el repositorio para facilitar el setup
+# IMPORTANTE: Descomentar estas líneas si quieres ignorar .env en el futuro
+# .env
+# .env.local
+# .env.*.local
+# *.env
+
+# Excepciones: Permitir archivos .env específicos
+!backend/.env
+!frontend/.env
+!.env.example
+!**/.env.example
 
 # Python
 venv/
@@ -56,7 +64,7 @@ htmlcov/
 
 # Temporary files
 *.tmp
-*.bak
-*.backup
+# *.bak (comentado - los backups pueden ser útiles)
+# *.backup (comentado - los backups pueden ser útiles)
 *.old
 *.orig

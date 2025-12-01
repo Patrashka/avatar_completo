@@ -9,8 +9,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./scripts/init/init-postgres.sql:/docker-entrypoint-initdb.d/01-init-postgres.sql
-      - ./scripts/procedures/stored_procedures.sql:/docker-entrypoint-initdb.d/02-stored-procedures.sql
+      - ./scripts/init/init-postgres.sql:/docker-entrypoint-initdb.d/01-init-postgres.sql:ro
+      - ./scripts/procedures/stored_procedures.sql:/docker-entrypoint-initdb.d/02-stored-procedures.sql:ro
       - postgres_data:/var/lib/postgresql/data
     # Nota: Este docker-compose es compartido con cms_main
     # Ambos proyectos usan la misma base de datos: medico_db

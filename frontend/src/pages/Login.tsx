@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
 // Obtener URL del API desde variables de entorno o usar localhost por defecto
@@ -122,6 +122,13 @@ export default function Login() {
           >
             {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
           </button>
+
+          <div style={styles.registerLink}>
+            <span style={styles.registerText}>¿No tienes cuenta?</span>
+            <Link to="/register" style={styles.link}>
+              Regístrate aquí
+            </Link>
+          </div>
         </form>
 
         
@@ -234,6 +241,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#888",
     textAlign: "center",
     fontStyle: "italic",
+  },
+  registerLink: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    marginTop: "16px",
+  },
+  registerText: {
+    color: "#aaa",
+    fontSize: "14px",
+  },
+  link: {
+    color: "#2ecc71",
+    textDecoration: "none",
+    fontWeight: 600,
+    transition: "all 0.3s",
   },
 };
 

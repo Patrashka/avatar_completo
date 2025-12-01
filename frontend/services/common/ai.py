@@ -12,11 +12,34 @@ load_dotenv()
 
 @lru_cache()
 def get_gemini_model() -> genai.GenerativeModel:
-    api_key = os.getenv("GOOGLE_GEMINI_API_KEY")
+    # Usar GEMINI_API_KEY (consistente con backend)
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("Falta GOOGLE_GEMINI_API_KEY en .env")
+        raise RuntimeError("Falta GEMINI_API_KEY en .env. Configura esta variable de entorno.")
+    # Limpiar la API key (eliminar espacios, comillas, etc.)
+    api_key = api_key.strip()
+    if api_key.startswith('"') and api_key.endswith('"'):
+        api_key = api_key[1:-1].strip()
+    elif api_key.startswith("'") and api_key.endswith("'"):
+        api_key = api_key[1:-1].strip()
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-2.5-flash")
+    # Intentar diferentes modelos disponibles (priorizar modelos free tier más recientes)
+    models_to_try = [
+        "gemini-2.5-flash",      # Modelo Flash más reciente (free tier)
+        "gemini-2.5-flash-lite", # Versión ligera (free tier)
+        "gemini-1.5-flash",      # Flash anterior
+        "gemini-pro",            # Modelo base (más compatible)
+        "gemini-1.5-pro"         # Pro anterior
+    ]
+    
+    for model_name in models_to_try:
+        try:
+            return genai.GenerativeModel(model_name)
+        except Exception:
+            continue
+    
+    # Fallback a gemini-pro que debería estar disponible
+    return genai.GenerativeModel("gemini-pro")
 
 
 def summarize_text(text: str) -> str:
